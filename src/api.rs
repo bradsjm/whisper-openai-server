@@ -11,7 +11,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::json;
-use tokio::sync::Mutex;
 
 use crate::audio::{decode_to_mono_16khz_f32, validate_extension};
 use crate::backend::{TaskKind, TranscribeRequest, Transcriber};
@@ -30,21 +29,12 @@ pub struct AppState {
     pub cfg: AppConfig,
     /// Active inference backend implementation.
     pub backend: Arc<dyn Transcriber>,
-    /// Global lock that serializes inference calls.
-    ///
-    /// This keeps backend execution predictable when model state is not fully
-    /// concurrent-safe.
-    pub infer_lock: Mutex<()>,
 }
 
 impl AppState {
     /// Constructs shared handler state.
     pub fn new(cfg: AppConfig, backend: Arc<dyn Transcriber>) -> Self {
-        Self {
-            cfg,
-            backend,
-            infer_lock: Mutex::new(()),
-        }
+        Self { cfg, backend }
     }
 }
 
@@ -161,7 +151,6 @@ async fn handle_audio_request(
         temperature: form.temperature,
     };
 
-    let _guard = state.infer_lock.lock().await;
     let result = state.backend.transcribe(request).await?;
 
     match form.response_format {
@@ -459,6 +448,7 @@ mod tests {
             hf_token: None,
             api_model_alias: "whisper-mlx".to_string(),
             backend_kind: BackendKind::WhisperRs,
+            whisper_parallelism: 1,
         }
     }
 

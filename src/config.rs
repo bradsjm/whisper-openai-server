@@ -6,6 +6,9 @@
 use crate::error::AppError;
 use std::env;
 
+pub const DEFAULT_WHISPER_PARALLELISM: usize = 1;
+pub const MAX_WHISPER_PARALLELISM: usize = 8;
+
 /// Supported inference backend implementations.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum BackendKind {
@@ -40,6 +43,8 @@ pub struct AppConfig {
     pub api_model_alias: String,
     /// Selected backend implementation.
     pub backend_kind: BackendKind,
+    /// Number of parallel whisper-rs inference workers.
+    pub whisper_parallelism: usize,
 }
 
 impl AppConfig {
@@ -56,6 +61,7 @@ impl AppConfig {
     /// - `HF_TOKEN` (optional Hugging Face token)
     /// - `WHISPER_MODEL_ALIAS` (default `whisper-mlx`)
     /// - `WHISPER_BACKEND` (only `whisper-rs` is currently supported)
+    /// - `WHISPER_PARALLELISM` (default `1`, min `1`, max `8`)
     /// - `API_KEY` (optional)
     pub fn from_env() -> Result<Self, AppError> {
         let host = env_str("HOST", "127.0.0.1");
@@ -77,6 +83,12 @@ impl AppConfig {
                 )));
             }
         };
+        let whisper_parallelism = env_usize_bounded(
+            "WHISPER_PARALLELISM",
+            DEFAULT_WHISPER_PARALLELISM,
+            1,
+            MAX_WHISPER_PARALLELISM,
+        )?;
 
         Ok(Self {
             host,
@@ -91,6 +103,7 @@ impl AppConfig {
             hf_token: env_opt("HF_TOKEN"),
             api_model_alias,
             backend_kind,
+            whisper_parallelism,
         })
     }
 
@@ -164,5 +177,58 @@ fn env_bool(name: &str, default: bool) -> Result<bool, AppError> {
         _ => Err(AppError::internal(format!(
             "invalid {name}={raw:?}; expected true/false"
         ))),
+    }
+}
+
+fn env_usize_bounded(
+    name: &str,
+    default: usize,
+    min: usize,
+    max: usize,
+) -> Result<usize, AppError> {
+    let raw = env::var(name).unwrap_or_else(|_| default.to_string());
+    parse_usize_bounded(name, &raw, min, max)
+}
+
+fn parse_usize_bounded(name: &str, raw: &str, min: usize, max: usize) -> Result<usize, AppError> {
+    let trimmed = raw.trim();
+    let parsed = trimmed.parse::<usize>().map_err(|_| {
+        AppError::internal(format!(
+            "invalid {name}={raw:?}; expected integer in range [{min}, {max}]"
+        ))
+    })?;
+    if parsed < min || parsed > max {
+        return Err(AppError::internal(format!(
+            "invalid {name}={raw:?}; expected integer in range [{min}, {max}]"
+        )));
+    }
+    Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_usize_bounded;
+
+    #[test]
+    fn parse_usize_bounded_accepts_in_range_values() {
+        assert_eq!(
+            parse_usize_bounded("WHISPER_PARALLELISM", "1", 1, 8).unwrap(),
+            1
+        );
+        assert_eq!(
+            parse_usize_bounded("WHISPER_PARALLELISM", "8", 1, 8).unwrap(),
+            8
+        );
+    }
+
+    #[test]
+    fn parse_usize_bounded_rejects_non_numeric_value() {
+        assert!(parse_usize_bounded("WHISPER_PARALLELISM", "abc", 1, 8).is_err());
+    }
+
+    #[test]
+    fn parse_usize_bounded_rejects_out_of_range_values() {
+        assert!(parse_usize_bounded("WHISPER_PARALLELISM", "0", 1, 8).is_err());
+        assert!(parse_usize_bounded("WHISPER_PARALLELISM", "9", 1, 8).is_err());
     }
 }

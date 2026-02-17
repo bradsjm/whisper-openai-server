@@ -17,7 +17,7 @@ use tracing::info;
 
 use crate::api::{build_router, AppState};
 use crate::backend::build_backend;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, MAX_WHISPER_PARALLELISM};
 use crate::model_store::ensure_model_ready;
 
 #[tokio::main]
@@ -45,6 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         port = cfg.port,
         model = %cfg.whisper_model,
         backend = ?cfg.backend_kind,
+        whisper_parallelism = cfg.whisper_parallelism,
+        max_whisper_parallelism = MAX_WHISPER_PARALLELISM,
         "starting whisper-openai-rust"
     );
 

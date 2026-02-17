@@ -32,6 +32,7 @@ export WHISPER_HF_FILENAME=ggml-small.bin
 export WHISPER_CACHE_DIR="$HOME/.cache/whispercpp/models"
 # Optional: export HF_TOKEN=hf_xxx
 export WHISPER_MODEL_ALIAS=whisper-mlx
+export WHISPER_PARALLELISM=1
 export HOST=127.0.0.1
 export PORT=8000
 export API_KEY=local-dev
@@ -59,6 +60,12 @@ cargo run --release
 - `temperature` must be a finite float in `[0.0, 1.0]`.
 - If `API_KEY` is set, all endpoints require `Authorization: Bearer <API_KEY>`.
 - `.mp4` is always rejected by design.
+- `WHISPER_PARALLELISM` controls in-process inference concurrency for `whisper-rs`.
+  - default: `1`
+  - min: `1`
+  - max: `8`
+  - requests beyond the configured parallelism are queued until a worker is free.
+  - each worker loads its own model context, so memory usage scales with this value.
 
 ## Example
 

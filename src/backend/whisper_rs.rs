@@ -1,8 +1,9 @@
 //! `whisper-rs` backend implementation.
 //!
-//! This backend keeps a shared Whisper context in memory and runs inference on
-//! a blocking worker thread.
+//! This backend keeps a pool of Whisper contexts in memory and runs inference
+//! on blocking worker threads.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -16,26 +17,34 @@ use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::formats::normalize_text;
 
-#[derive(Clone)]
 /// Local inference backend powered by `whisper-rs`.
 pub struct WhisperRsBackend {
     model_path: String,
-    context: Arc<Mutex<WhisperContext>>,
+    contexts: Vec<Arc<Mutex<WhisperContext>>>,
+    next_context_idx: AtomicUsize,
 }
 
 impl WhisperRsBackend {
-    /// Loads the configured Whisper model and prepares a reusable context.
+    /// Loads the configured Whisper model and prepares reusable contexts.
     pub fn new(cfg: AppConfig) -> Result<Self, AppError> {
         let model_path = cfg.whisper_model.clone();
-        let context =
-            WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
-                .map_err(|err| {
-                    AppError::backend(format!("failed to load model at {model_path:?}: {err}"))
-                })?;
+        let mut contexts = Vec::with_capacity(cfg.whisper_parallelism);
+        for worker_idx in 0..cfg.whisper_parallelism {
+            let context =
+                WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
+                    .map_err(|err| {
+                        AppError::backend(format!(
+                            "failed to load model at {model_path:?} for worker {}: {err}",
+                            worker_idx + 1
+                        ))
+                    })?;
+            contexts.push(Arc::new(Mutex::new(context)));
+        }
 
         Ok(Self {
             model_path,
-            context: Arc::new(Mutex::new(context)),
+            contexts,
+            next_context_idx: AtomicUsize::new(0),
         })
     }
 }
@@ -44,7 +53,8 @@ impl WhisperRsBackend {
 impl Transcriber for WhisperRsBackend {
     async fn transcribe(&self, req: TranscribeRequest) -> Result<TranscriptResult, AppError> {
         let model_path = self.model_path.clone();
-        let context = Arc::clone(&self.context);
+        let context_idx = self.next_context_idx.fetch_add(1, Ordering::Relaxed) % self.contexts.len();
+        let context = Arc::clone(&self.contexts[context_idx]);
         task::spawn_blocking(move || run_whisper_rs(req, &model_path, context))
             .await
             .map_err(|err| AppError::backend(format!("whisper-rs worker task failed: {err}")))?
