@@ -17,7 +17,7 @@ use tracing::info;
 
 use crate::api::{build_router, AppState};
 use crate::backend::build_backend;
-use crate::config::{AppConfig, MAX_WHISPER_PARALLELISM};
+use crate::config::{AppConfig, CliOptions, MAX_WHISPER_PARALLELISM};
 use crate::model_store::ensure_model_ready;
 
 #[tokio::main]
@@ -30,7 +30,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compact()
         .init();
 
+    let cli_options = CliOptions::from_args()?;
+    if cli_options.help_requested {
+        let program = std::env::args()
+            .next()
+            .unwrap_or_else(|| "whisper-openai-rust".to_string());
+        CliOptions::print_help(&program);
+        return Ok(());
+    }
+
     let mut cfg = AppConfig::from_env()?;
+    cfg.apply_cli_overrides(cli_options);
     ensure_model_ready(&mut cfg)?;
     let backend = build_backend(&cfg)?;
     let state = Arc::new(AppState::new(cfg.clone(), backend));

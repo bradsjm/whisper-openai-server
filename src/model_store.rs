@@ -10,6 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use reqwest::StatusCode;
+use tracing::info;
 
 use crate::config::AppConfig;
 use crate::error::AppError;
@@ -52,6 +53,15 @@ pub fn ensure_model_ready(cfg: &mut AppConfig) -> Result<(), AppError> {
         cfg.whisper_model = target_path.to_string_lossy().to_string();
         return Ok(());
     }
+
+    info!(
+        target = "whisper_openai_rust::model_store",
+        repo = %cfg.whisper_hf_repo,
+        filename = %cfg.whisper_hf_filename,
+        size = ?cfg.whisper_model_size,
+        destination = %target_path.to_string_lossy(),
+        "starting whisper model download"
+    );
 
     download_model_to_path(cfg, &target_path)?;
     cfg.whisper_model = target_path.to_string_lossy().to_string();
