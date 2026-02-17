@@ -1,3 +1,8 @@
+//! Audio validation and decoding utilities.
+//!
+//! Uploaded files are decoded to 16 kHz mono PCM (`f32`) because that is the
+//! format expected by downstream Whisper inference in this project.
+
 use std::io::{Cursor, ErrorKind};
 
 use symphonia::core::audio::SampleBuffer;
@@ -13,8 +18,12 @@ use crate::error::AppError;
 
 const TARGET_SAMPLE_RATE: u32 = 16_000;
 
+/// File extensions accepted by upload validation.
 pub const SUPPORTED_EXTENSIONS: &[&str] = &["wav", "mp3", "m4a", "flac", "ogg", "webm"];
 
+/// Validates and normalizes the file extension from an uploaded filename.
+///
+/// Returns the lowercased extension without the leading dot.
 pub fn validate_extension(filename: &str) -> Result<String, AppError> {
     let extension = filename
         .rsplit_once('.')
@@ -40,6 +49,9 @@ pub fn validate_extension(filename: &str) -> Result<String, AppError> {
     Ok(extension)
 }
 
+/// Decodes media bytes into normalized 16 kHz mono samples.
+///
+/// `extension_hint` is used to improve container format probing.
 pub fn decode_to_mono_16khz_f32(bytes: &[u8], extension_hint: &str) -> Result<Vec<f32>, AppError> {
     let cursor = Cursor::new(bytes.to_vec());
     let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
@@ -144,6 +156,7 @@ pub fn decode_to_mono_16khz_f32(bytes: &[u8], extension_hint: &str) -> Result<Ve
     })
 }
 
+/// Resamples a mono signal from `src_rate` to `dst_rate` via linear interpolation.
 fn resample_linear(input: &[f32], src_rate: u32, dst_rate: u32) -> Vec<f32> {
     if src_rate == dst_rate || input.len() < 2 {
         return input.to_vec();

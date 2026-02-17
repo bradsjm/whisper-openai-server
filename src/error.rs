@@ -1,8 +1,11 @@
+//! Application error types and HTTP-to-OpenAI error mapping.
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Serialize;
 
+/// Error model used throughout request parsing, validation, and inference.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("{0}")]
@@ -25,10 +28,12 @@ pub enum AppError {
 }
 
 impl AppError {
+    /// Creates a `401 Unauthorized` error.
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::Unauthorized(message.into())
     }
 
+    /// Creates an `invalid_request_error` payload with status `400`.
     pub fn invalid_request(
         message: impl Into<String>,
         param: Option<&str>,
@@ -42,18 +47,22 @@ impl AppError {
         }
     }
 
+    /// Creates a `415 Unsupported Media Type` style error.
     pub fn unsupported_media_type(message: impl Into<String>) -> Self {
         Self::UnsupportedMediaType(message.into())
     }
 
+    /// Creates a multipart parsing/shape validation error.
     pub fn bad_multipart(message: impl Into<String>) -> Self {
         Self::BadMultipart(message.into())
     }
 
+    /// Creates an internal inference/backend error.
     pub fn backend(message: impl Into<String>) -> Self {
         Self::Backend(message.into())
     }
 
+    /// Creates a generic internal server error.
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
     }

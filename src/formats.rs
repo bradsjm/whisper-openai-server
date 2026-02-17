@@ -1,18 +1,27 @@
+//! Helpers for OpenAI-compatible response formatting.
+
 use std::fmt;
 
 use crate::backend::TranscriptSegment;
 use crate::error::AppError;
 
+/// Output format accepted by `response_format` in audio endpoints.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ResponseFormat {
+    /// JSON object with a single `text` field.
     Json,
+    /// Raw plain-text transcript body.
     Text,
+    /// JSON object with transcript text plus segment timings.
     VerboseJson,
+    /// SubRip subtitle format.
     Srt,
+    /// WebVTT subtitle format.
     Vtt,
 }
 
 impl ResponseFormat {
+    /// Parses a `response_format` string used by the HTTP API.
     pub fn parse(raw: &str) -> Result<Self, AppError> {
         match raw.trim() {
             "json" => Ok(Self::Json),
@@ -41,10 +50,12 @@ impl fmt::Display for ResponseFormat {
     }
 }
 
+/// Normalizes transcript text by collapsing all whitespace runs to one space.
 pub fn normalize_text(raw: &str) -> String {
     raw.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Converts transcript segments to SRT subtitle text.
 pub fn segments_to_srt(segments: &[TranscriptSegment]) -> String {
     let mut lines = Vec::new();
     for (idx, seg) in segments.iter().enumerate() {
@@ -69,6 +80,7 @@ pub fn segments_to_srt(segments: &[TranscriptSegment]) -> String {
     }
 }
 
+/// Converts transcript segments to WebVTT subtitle text.
 pub fn segments_to_vtt(segments: &[TranscriptSegment]) -> String {
     let mut lines = vec!["WEBVTT".to_string(), String::new()];
     for seg in segments {

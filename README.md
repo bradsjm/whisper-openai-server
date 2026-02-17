@@ -1,6 +1,6 @@
 # whisper-openai-rust
 
-Rust OpenAI-compatible Whisper server with strict upload validation and no runtime Python or `ffmpeg` binary dependency.
+Rust OpenAI-compatible Whisper server.
 
 Endpoints:
 
@@ -10,12 +10,6 @@ Endpoints:
 - `GET /v1/models`
 - `POST /v1/audio/transcriptions`
 - `POST /v1/audio/translations`
-
-## Why this exists
-
-- Ports the HTTP layer from the Python `whisper-openai` project into Rust.
-- Fixes semantics during port (model validation, stricter request validation).
-- Avoids shelling out to `ffmpeg` by decoding audio in-process with pure Rust (`symphonia`).
 
 ## Current backend status
 

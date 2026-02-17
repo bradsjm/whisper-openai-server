@@ -1,3 +1,8 @@
+//! `whisper-rs` backend implementation.
+//!
+//! This backend keeps a shared Whisper context in memory and runs inference on
+//! a blocking worker thread.
+
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -12,12 +17,14 @@ use crate::error::AppError;
 use crate::formats::normalize_text;
 
 #[derive(Clone)]
+/// Local inference backend powered by `whisper-rs`.
 pub struct WhisperRsBackend {
     model_path: String,
     context: Arc<Mutex<WhisperContext>>,
 }
 
 impl WhisperRsBackend {
+    /// Loads the configured Whisper model and prepares a reusable context.
     pub fn new(cfg: AppConfig) -> Result<Self, AppError> {
         let model_path = cfg.whisper_model.clone();
         let context =

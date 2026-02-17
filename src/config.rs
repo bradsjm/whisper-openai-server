@@ -1,22 +1,45 @@
+//! Configuration loading from environment variables.
+//!
+//! Values are intentionally validated early so startup fails fast with
+//! actionable errors.
+
 use crate::error::AppError;
 use std::env;
 
+/// Supported inference backend implementations.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum BackendKind {
+    /// Uses `whisper-rs` (`whisper.cpp`) for local inference.
     WhisperRs,
 }
 
+/// Runtime configuration for the HTTP server and inference backend.
 #[derive(Debug, Clone)]
 pub struct AppConfig {
+    /// Host interface to bind, for example `127.0.0.1`.
     pub host: String,
+    /// TCP port to bind.
     pub port: u16,
+    /// Optional bearer token required by all endpoints.
     pub api_key: Option<String>,
+    /// Path to a Whisper model file on disk.
     pub whisper_model: String,
+    /// Additional accepted model identifier exposed by the API.
     pub api_model_alias: String,
+    /// Selected backend implementation.
     pub backend_kind: BackendKind,
 }
 
 impl AppConfig {
+    /// Builds configuration from environment variables.
+    ///
+    /// Variables:
+    /// - `HOST` (default `127.0.0.1`)
+    /// - `PORT` (default `8000`)
+    /// - `WHISPER_MODEL` (default `$HOME/.cache/whispercpp/models/ggml-small.bin`)
+    /// - `WHISPER_MODEL_ALIAS` (default `whisper-mlx`)
+    /// - `WHISPER_BACKEND` (only `whisper-rs` is currently supported)
+    /// - `API_KEY` (optional)
     pub fn from_env() -> Result<Self, AppError> {
         let host = env_str("HOST", "127.0.0.1");
         let port = env_u16("PORT", 8000)?;
@@ -48,6 +71,10 @@ impl AppConfig {
         })
     }
 
+    /// Returns all accepted model identifiers for request validation.
+    ///
+    /// This always includes `whisper-1` for OpenAI compatibility and may include
+    /// `api_model_alias` when it is different.
     pub fn accepted_model_ids(&self) -> Vec<String> {
         let mut ids = vec!["whisper-1".to_string()];
         if self.api_model_alias != "whisper-1" {

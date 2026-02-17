@@ -1,3 +1,8 @@
+//! Application entry point for the local Whisper-compatible HTTP server.
+//!
+//! This crate is a binary (not a library), so this file wires modules together,
+//! starts the Axum server, and handles graceful shutdown signals.
+
 mod api;
 mod audio;
 mod backend;
@@ -46,6 +51,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Waits for a shutdown signal and then returns.
+///
+/// On Unix systems this listens for both Ctrl+C and SIGTERM.
+/// On non-Unix systems this listens for Ctrl+C only.
 async fn shutdown_signal() {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;

@@ -1,3 +1,8 @@
+//! HTTP API surface compatible with key OpenAI Whisper endpoints.
+//!
+//! This module owns request parsing, authentication, input validation, and
+//! response formatting while delegating inference to a backend implementation.
+
 use std::sync::Arc;
 
 use axum::extract::{Multipart, State};
@@ -14,16 +19,26 @@ use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::formats::{segments_to_srt, segments_to_vtt, ResponseFormat};
 
+/// Human-readable service name returned by health endpoints.
 pub const APP_NAME: &str = "whisper-openai-rust";
+/// Service version string returned by health endpoints.
 pub const APP_VERSION: &str = "0.1.0";
 
+/// Shared state injected into all route handlers.
 pub struct AppState {
+    /// Runtime configuration loaded at startup.
     pub cfg: AppConfig,
+    /// Active inference backend implementation.
     pub backend: Arc<dyn Transcriber>,
+    /// Global lock that serializes inference calls.
+    ///
+    /// This keeps backend execution predictable when model state is not fully
+    /// concurrent-safe.
     pub infer_lock: Mutex<()>,
 }
 
 impl AppState {
+    /// Constructs shared handler state.
     pub fn new(cfg: AppConfig, backend: Arc<dyn Transcriber>) -> Self {
         Self {
             cfg,
@@ -33,6 +48,7 @@ impl AppState {
     }
 }
 
+/// Builds the Axum router for all public endpoints.
 pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(root))
@@ -44,6 +60,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+/// Root status endpoint (`GET /`).
 pub async fn root(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -57,6 +74,7 @@ pub async fn root(
     })))
 }
 
+/// Alias status endpoint (`GET /health`).
 pub async fn health(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -64,6 +82,7 @@ pub async fn health(
     root(State(state), headers).await
 }
 
+/// API root status endpoint (`GET /v1`).
 pub async fn v1(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -71,6 +90,7 @@ pub async fn v1(
     root(State(state), headers).await
 }
 
+/// Lists accepted model identifiers (`GET /v1/models`).
 pub async fn list_models(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -86,6 +106,7 @@ pub async fn list_models(
     Ok(Json(json!({"object": "list", "data": data})))
 }
 
+/// Handles speech-to-text transcription requests (`POST /v1/audio/transcriptions`).
 pub async fn audio_transcriptions(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -94,6 +115,7 @@ pub async fn audio_transcriptions(
     handle_audio_request(state, headers, multipart, TaskKind::Transcribe).await
 }
 
+/// Handles speech-to-English translation requests (`POST /v1/audio/translations`).
 pub async fn audio_translations(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -186,6 +208,7 @@ async fn handle_audio_request(
     }
 }
 
+/// Parses and validates multipart form fields for audio endpoints.
 async fn parse_audio_form(multipart: &mut Multipart) -> Result<AudioForm, AppError> {
     let mut file_name: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
@@ -335,6 +358,7 @@ async fn parse_audio_form(multipart: &mut Multipart) -> Result<AudioForm, AppErr
     })
 }
 
+/// Verifies that the requested model id is supported by current configuration.
 fn validate_requested_model(cfg: &AppConfig, requested_model: &str) -> Result<(), AppError> {
     if cfg
         .accepted_model_ids()
@@ -354,6 +378,7 @@ fn validate_requested_model(cfg: &AppConfig, requested_model: &str) -> Result<()
     ))
 }
 
+/// Enforces optional bearer-token authentication.
 fn require_auth(cfg: &AppConfig, headers: &HeaderMap) -> Result<(), AppError> {
     let Some(expected_api_key) = cfg.api_key.as_deref() else {
         return Ok(());
