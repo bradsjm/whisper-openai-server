@@ -18,16 +18,19 @@ Endpoints:
 ## Requirements
 
 - Rust toolchain (`cargo`)
-- A Whisper GGML model file, for example:
-  - `~/.cache/whispercpp/models/ggml-small.bin`
+- A Whisper GGML model file, downloaded automatically on first run by default
 
-You can download a model from the `whisper.cpp` model scripts or any compatible GGML model source.
+The server uses `whisper-rs`, which requires `whisper.cpp`-compatible model files (for example `ggml-small.bin`).
 
 ## Run
 
 ```bash
 export WHISPER_BACKEND=whisper-rs
-export WHISPER_MODEL="$HOME/.cache/whispercpp/models/ggml-small.bin"
+export WHISPER_AUTO_DOWNLOAD=true
+export WHISPER_HF_REPO=ggerganov/whisper.cpp
+export WHISPER_HF_FILENAME=ggml-small.bin
+export WHISPER_CACHE_DIR="$HOME/.cache/whispercpp/models"
+# Optional: export HF_TOKEN=hf_xxx
 export WHISPER_MODEL_ALIAS=whisper-mlx
 export HOST=127.0.0.1
 export PORT=8000
@@ -45,6 +48,10 @@ cargo run --release
 ## Behavior notes
 
 - `model` is validated. Accepted IDs are `whisper-1` and `WHISPER_MODEL_ALIAS`.
+- Startup model resolution order:
+  - if `WHISPER_MODEL` points to an existing file, use it
+  - else if `WHISPER_AUTO_DOWNLOAD=true`, download from Hugging Face to `WHISPER_CACHE_DIR/WHISPER_HF_FILENAME`
+  - else fail startup with an actionable error
 - Strict extension allowlist:
   - allowed: `.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, `.webm`
   - rejected: `.mp4` (always)

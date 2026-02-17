@@ -451,6 +451,12 @@ mod tests {
             port: 8000,
             api_key: api_key.map(ToOwned::to_owned),
             whisper_model: "dummy".to_string(),
+            whisper_model_explicit: true,
+            whisper_auto_download: false,
+            whisper_hf_repo: "ggerganov/whisper.cpp".to_string(),
+            whisper_hf_filename: "ggml-small.bin".to_string(),
+            whisper_cache_dir: "/tmp".to_string(),
+            hf_token: None,
             api_model_alias: "whisper-mlx".to_string(),
             backend_kind: BackendKind::WhisperRs,
         }

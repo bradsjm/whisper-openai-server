@@ -9,6 +9,7 @@ mod backend;
 mod config;
 mod error;
 mod formats;
+mod model_store;
 
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ use tracing::info;
 use crate::api::{build_router, AppState};
 use crate::backend::build_backend;
 use crate::config::AppConfig;
+use crate::model_store::ensure_model_ready;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +30,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compact()
         .init();
 
-    let cfg = AppConfig::from_env()?;
+    let mut cfg = AppConfig::from_env()?;
+    ensure_model_ready(&mut cfg)?;
     let backend = build_backend(&cfg)?;
     let state = Arc::new(AppState::new(cfg.clone(), backend));
 

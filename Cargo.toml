@@ -15,6 +15,7 @@ tokio = { version = "1.43", features = ["io-util", "macros", "process", "rt-mult
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 whisper-rs = { version = "0.15.1", default-features = false, features = ["metal"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 
 [dev-dependencies]
 tower = "0.5"
