@@ -7,4 +7,4 @@ PORT="${PORT:-8000}"
 export HOST
 export PORT
 
-exec cargo run --release
+exec cargo run --release -- $*

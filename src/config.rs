@@ -225,7 +225,7 @@ impl CliOptions {
         println!(
             "Usage: {program} [OPTIONS]\n\n\
 Options:\n\
-  -h, --help                              Show this help and exit\n\
+  -h, --help                          Show this help and exit\n\
       --host <HOST>                       Bind host (env: HOST)\n\
       --port <PORT>                       Bind port (env: PORT)\n\
       --api-key <API_KEY>                 Require bearer token (env: API_KEY)\n\
