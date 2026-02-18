@@ -31,15 +31,24 @@ A high-performance, OpenAI-compatible Whisper API server written in Rust. This s
 
 ## Installation
 
-### Prerequisites
+### Quick Install (Binary Release)
 
-- **Rust toolchain**: Install via [rustup](https://rustup.rs/) (version 1.70 or later recommended)
+**macOS (Apple Silicon/arm64)**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bradsjm/whisper-openai-server/releases/latest/download/whisper-openai-server-installer.sh | sh
+```
+
+Or download the binary directly from the [releases page](https://github.com/bradsjm/whisper-openai-server/releases).
+
+### Build from Source
+
+**Prerequisites:**
+- **Rust toolchain**: Install via [rustup](https://rustup.rs/) (version 1.70 or later)
 - **C Compiler**: Required for building whisper-rs bindings
   - macOS: `xcode-select --install`
   - Linux: `sudo apt install build-essential` (Debian/Ubuntu) or equivalent
 - **Git**: For cloning the repository
-
-### Build from Source
 
 ```bash
 git clone https://github.com/bradsjm/whisper-openai-server.git
