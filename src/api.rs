@@ -414,7 +414,7 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::backend::{TranscribeRequest, Transcriber, TranscriptResult, TranscriptSegment};
-    use crate::config::{AppConfig, BackendKind, WhisperModelSize};
+    use crate::config::{AccelerationKind, AppConfig, BackendKind, WhisperModelSize};
     use crate::error::AppError;
 
     use super::{build_router, AppState};
@@ -451,6 +451,8 @@ mod tests {
             hf_token: None,
             api_model_alias: "whisper-mlx".to_string(),
             backend_kind: BackendKind::WhisperRs,
+            acceleration_kind: AccelerationKind::Metal,
+            acceleration_explicit: false,
             whisper_parallelism: 1,
             whisper_model_size: WhisperModelSize::Small,
         }

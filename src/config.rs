@@ -9,6 +9,24 @@ use std::env;
 pub const DEFAULT_WHISPER_PARALLELISM: usize = 1;
 pub const MAX_WHISPER_PARALLELISM: usize = 8;
 
+/// Supported acceleration modes for whisper-rs context initialization.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum AccelerationKind {
+    /// Prefer Metal/GPU acceleration.
+    Metal,
+    /// Disable GPU acceleration and run on CPU.
+    None,
+}
+
+impl AccelerationKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Metal => "metal",
+            Self::None => "none",
+        }
+    }
+}
+
 /// Supported whisper.cpp model sizes.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum WhisperModelSize {
@@ -60,6 +78,10 @@ pub struct AppConfig {
     pub api_model_alias: String,
     /// Selected backend implementation.
     pub backend_kind: BackendKind,
+    /// Requested acceleration mode used when initializing whisper contexts.
+    pub acceleration_kind: AccelerationKind,
+    /// Whether acceleration mode was explicitly provided via env/CLI.
+    pub acceleration_explicit: bool,
     /// Number of parallel whisper-rs inference workers.
     pub whisper_parallelism: usize,
     /// Requested model size used to resolve default model filename.
@@ -82,6 +104,7 @@ pub struct CliOptions {
     pub hf_token: Option<String>,
     pub api_model_alias: Option<String>,
     pub backend_kind: Option<BackendKind>,
+    pub acceleration_kind: Option<AccelerationKind>,
     pub whisper_parallelism: Option<usize>,
 }
 
@@ -100,6 +123,7 @@ impl AppConfig {
     /// - `HF_TOKEN` (optional Hugging Face token)
     /// - `WHISPER_MODEL_ALIAS` (default `whisper-mlx`)
     /// - `WHISPER_BACKEND` (only `whisper-rs` is currently supported)
+    /// - `WHISPER_ACCELERATION` (`metal` or `none`, default `metal`)
     /// - `WHISPER_PARALLELISM` (default `1`, min `1`, max `8`)
     /// - `API_KEY` (optional)
     pub fn from_env() -> Result<Self, AppError> {
@@ -117,6 +141,12 @@ impl AppConfig {
         let whisper_model = env_opt("WHISPER_MODEL")
             .unwrap_or_else(|| format!("{}/{}", whisper_cache_dir, whisper_hf_filename));
         let api_model_alias = env_str("WHISPER_MODEL_ALIAS", "whisper-mlx");
+        let acceleration_raw = env_opt("WHISPER_ACCELERATION");
+        let acceleration_explicit = acceleration_raw.is_some();
+        let acceleration_kind = match acceleration_raw {
+            Some(raw) => parse_acceleration_kind("WHISPER_ACCELERATION", &raw)?,
+            None => AccelerationKind::Metal,
+        };
 
         let backend_kind = match env_str("WHISPER_BACKEND", "whisper-rs").as_str() {
             "whisper-rs" => BackendKind::WhisperRs,
@@ -146,6 +176,8 @@ impl AppConfig {
             hf_token: env_opt("HF_TOKEN"),
             api_model_alias,
             backend_kind,
+            acceleration_kind,
+            acceleration_explicit,
             whisper_parallelism,
             whisper_model_size,
         })
@@ -203,6 +235,10 @@ impl AppConfig {
         if let Some(backend_kind) = options.backend_kind {
             self.backend_kind = backend_kind;
         }
+        if let Some(acceleration_kind) = options.acceleration_kind {
+            self.acceleration_kind = acceleration_kind;
+            self.acceleration_explicit = true;
+        }
         if let Some(whisper_parallelism) = options.whisper_parallelism {
             self.whisper_parallelism = whisper_parallelism;
         }
@@ -238,6 +274,7 @@ Options:\n\
       --hf-token <TOKEN>                  HF auth token (env: HF_TOKEN)\n\
       --whisper-model-alias <ALIAS>       Extra accepted model id (env: WHISPER_MODEL_ALIAS)\n\
       --whisper-backend <BACKEND>         Inference backend (env: WHISPER_BACKEND)\n\
+      --acceleration <MODE>               Acceleration mode metal|none (env: WHISPER_ACCELERATION)\n\
       --whisper-parallelism <N>           Inference workers in range [1, 8] (env: WHISPER_PARALLELISM)\n\n\
 Notes:\n\
   - Command-line options override environment variable values.\n\
@@ -315,6 +352,11 @@ Notes:\n\
                 "--whisper-backend" => {
                     let raw = required_option_value(name, inline_value, &mut iter)?;
                     options.backend_kind = Some(parse_backend_kind(&raw)?);
+                }
+                "--acceleration" => {
+                    let raw = required_option_value(name, inline_value, &mut iter)?;
+                    options.acceleration_kind =
+                        Some(parse_acceleration_kind("WHISPER_ACCELERATION", &raw)?);
                 }
                 "--whisper-parallelism" => {
                     let raw = required_option_value(name, inline_value, &mut iter)?;
@@ -502,6 +544,16 @@ fn parse_backend_kind(raw: &str) -> Result<BackendKind, AppError> {
     }
 }
 
+fn parse_acceleration_kind(name: &str, raw: &str) -> Result<AccelerationKind, AppError> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "metal" => Ok(AccelerationKind::Metal),
+        "none" => Ok(AccelerationKind::None),
+        _ => Err(AppError::internal(format!(
+            "invalid {name}={raw:?}; expected metal|none"
+        ))),
+    }
+}
+
 fn whisper_model_filename(size: WhisperModelSize) -> &'static str {
     match size {
         WhisperModelSize::Tiny => "ggml-tiny.bin",
@@ -543,7 +595,8 @@ fn parse_model_size(name: &str, raw: &str) -> Result<WhisperModelSize, AppError>
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_model_size, parse_usize_bounded, whisper_model_filename, CliOptions, WhisperModelSize,
+        parse_acceleration_kind, parse_model_size, parse_usize_bounded, whisper_model_filename,
+        AccelerationKind, CliOptions, WhisperModelSize,
     };
 
     #[test]
@@ -610,11 +663,38 @@ mod tests {
     }
 
     #[test]
+    fn cli_parsing_supports_acceleration() {
+        let options = CliOptions::from_tokens(
+            "whisper-openai-server".to_string(),
+            vec!["--acceleration=none".to_string()],
+        )
+        .unwrap();
+        assert_eq!(options.acceleration_kind, Some(AccelerationKind::None));
+    }
+
+    #[test]
     fn parse_model_size_accepts_large_alias() {
         assert_eq!(
             parse_model_size("WHISPER_MODEL_SIZE", "large").unwrap(),
             WhisperModelSize::LargeV3
         );
+    }
+
+    #[test]
+    fn parse_acceleration_kind_accepts_supported_values() {
+        assert_eq!(
+            parse_acceleration_kind("WHISPER_ACCELERATION", "metal").unwrap(),
+            AccelerationKind::Metal
+        );
+        assert_eq!(
+            parse_acceleration_kind("WHISPER_ACCELERATION", "none").unwrap(),
+            AccelerationKind::None
+        );
+    }
+
+    #[test]
+    fn parse_acceleration_kind_rejects_unknown_values() {
+        assert!(parse_acceleration_kind("WHISPER_ACCELERATION", "cpu").is_err());
     }
 
     #[test]

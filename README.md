@@ -42,7 +42,7 @@ A high-performance, OpenAI-compatible Whisper API server written in Rust. This s
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/whisper-openai-server.git
+git clone https://github.com/bradsjm/whisper-openai-server.git
 cd whisper-openai-server
 cargo build --release
 ```
@@ -91,6 +91,7 @@ The server can be configured using environment variables or command-line argumen
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WHISPER_BACKEND` | `whisper-rs` | Inference backend (currently only `whisper-rs` supported) |
+| `WHISPER_ACCELERATION` | `metal` | Acceleration mode: `metal` or `none` |
 | `WHISPER_AUTO_DOWNLOAD` | `true` | Automatically download model if not found |
 | `WHISPER_HF_REPO` | `ggerganov/whisper.cpp` | Hugging Face repository for model downloads |
 | `WHISPER_MODEL_SIZE` | `small` | Model preset: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v1`, `large-v2`, `large-v3`, `large-v3-turbo` (`large` -> `large-v3`, `turbo` -> `large-v3-turbo`) |
@@ -114,6 +115,7 @@ cargo run --release -- --help
 | `--host <HOST>` | Server host address |
 | `--port <PORT>` | Server port |
 | `--whisper-backend <BACKEND>` | Inference backend |
+| `--acceleration <MODE>` | Acceleration mode: `metal` or `none` |
 | `--whisper-model-size <SIZE>` | Model size |
 | `--whisper-model <PATH>` | Path to specific model file |
 | `--whisper-parallelism <N>` | Number of workers (1-8) |
@@ -129,6 +131,20 @@ cargo run --release -- --help
 | `large-v3-turbo` (`turbo`) | Fast large-v3-turbo preset |
 
 For custom and quantized files (`q5`, `q8`, etc.), use `WHISPER_HF_FILENAME` or provide an explicit local path with `WHISPER_MODEL`.
+
+Acceleration behavior:
+- `WHISPER_ACCELERATION=none` (or `--acceleration=none`) forces CPU mode.
+- `WHISPER_ACCELERATION=metal` (or `--acceleration=metal`) requires Metal and fails startup if unavailable.
+- Default behavior (`metal` not explicitly set) tries Metal first and falls back to CPU if Metal initialization fails.
+
+Example startup logs:
+
+```text
+INFO initialized whisper acceleration requested_acceleration=metal effective_acceleration=metal whisper_parallelism=2
+INFO starting whisper-openai-server host=127.0.0.1 port=8000 model=/.../ggml-small.bin backend=WhisperRs acceleration=metal whisper_parallelism=2 max_whisper_parallelism=8
+```
+
+If fallback is used (default `metal` not explicitly set), `effective_acceleration=none` is logged.
 
 ## API Documentation
 
@@ -484,4 +500,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Support
 
-For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/yourusername/whisper-openai-server).
+For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/bradsjm/whisper-openai-server).

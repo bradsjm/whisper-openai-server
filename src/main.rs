@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         port = cfg.port,
         model = %cfg.whisper_model,
         backend = ?cfg.backend_kind,
+        acceleration = %cfg.acceleration_kind.as_str(),
         whisper_parallelism = cfg.whisper_parallelism,
         max_whisper_parallelism = MAX_WHISPER_PARALLELISM,
         "starting whisper-openai-server"

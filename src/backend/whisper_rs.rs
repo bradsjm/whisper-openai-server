@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use tokio::task;
-use tracing::warn;
+use tracing::{info, warn};
 use whisper_rs::{
     get_lang_str, FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters,
 };
 
 use crate::backend::{TranscribeRequest, Transcriber, TranscriptResult, TranscriptSegment};
-use crate::config::AppConfig;
+use crate::config::{AccelerationKind, AppConfig};
 use crate::error::AppError;
 use crate::formats::normalize_text;
 
@@ -29,18 +29,47 @@ impl WhisperRsBackend {
     /// Loads the configured Whisper model and prepares reusable contexts.
     pub fn new(cfg: AppConfig) -> Result<Self, AppError> {
         let model_path = cfg.whisper_model.clone();
-        let mut contexts = Vec::with_capacity(cfg.whisper_parallelism);
-        for worker_idx in 0..cfg.whisper_parallelism {
-            let context =
-                WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
-                    .map_err(|err| {
-                    AppError::backend(format!(
-                        "failed to load model at {model_path:?} for worker {}: {err}",
-                        worker_idx + 1
-                    ))
-                })?;
-            contexts.push(Arc::new(Mutex::new(context)));
-        }
+        let (contexts, effective_acceleration) = match cfg.acceleration_kind {
+            AccelerationKind::None => (
+                build_contexts(&model_path, cfg.whisper_parallelism, false)?,
+                AccelerationKind::None,
+            ),
+            AccelerationKind::Metal => {
+                match build_contexts(&model_path, cfg.whisper_parallelism, true) {
+                    Ok(contexts) => (contexts, AccelerationKind::Metal),
+                    Err(err) if !cfg.acceleration_explicit => {
+                        warn!(
+                            error = %err,
+                            requested_acceleration = "metal",
+                            fallback_acceleration = "none",
+                            "metal initialization failed; falling back to cpu"
+                        );
+                        (
+                            build_contexts(&model_path, cfg.whisper_parallelism, false).map_err(
+                                |cpu_err| {
+                                    AppError::backend(format!(
+                                        "failed to initialize metal acceleration ({err}); cpu fallback also failed: {cpu_err}"
+                                    ))
+                                },
+                            )?,
+                            AccelerationKind::None,
+                        )
+                    }
+                    Err(err) => {
+                        return Err(AppError::backend(format!(
+                            "failed to initialize whisper with metal acceleration: {err}"
+                        )));
+                    }
+                }
+            }
+        };
+
+        info!(
+            requested_acceleration = %cfg.acceleration_kind.as_str(),
+            effective_acceleration = %effective_acceleration.as_str(),
+            whisper_parallelism = cfg.whisper_parallelism,
+            "initialized whisper acceleration"
+        );
 
         Ok(Self {
             model_path,
@@ -48,6 +77,31 @@ impl WhisperRsBackend {
             next_context_idx: AtomicUsize::new(0),
         })
     }
+}
+
+fn build_contexts(
+    model_path: &str,
+    whisper_parallelism: usize,
+    use_gpu: bool,
+) -> Result<Vec<Arc<Mutex<WhisperContext>>>, AppError> {
+    let mut contexts = Vec::with_capacity(whisper_parallelism);
+    let acceleration = if use_gpu { "metal" } else { "none" };
+
+    for worker_idx in 0..whisper_parallelism {
+        let mut params = WhisperContextParameters::default();
+        params.use_gpu(use_gpu);
+
+        let context = WhisperContext::new_with_params(model_path, params).map_err(|err| {
+            AppError::backend(format!(
+                "failed to load model at {model_path:?} for worker {} using acceleration={acceleration}: {err}",
+                worker_idx + 1,
+            ))
+        })?;
+
+        contexts.push(Arc::new(Mutex::new(context)));
+    }
+
+    Ok(contexts)
 }
 
 #[async_trait]
