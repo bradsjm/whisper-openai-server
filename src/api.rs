@@ -19,7 +19,7 @@ use crate::error::AppError;
 use crate::formats::{segments_to_srt, segments_to_vtt, ResponseFormat};
 
 /// Human-readable service name returned by health endpoints.
-pub const APP_NAME: &str = "whisper-openai-rust";
+pub const APP_NAME: &str = "whisper-openai-server";
 /// Service version string returned by health endpoints.
 pub const APP_VERSION: &str = "0.1.0";
 /// Maximum accepted multipart request body size for audio uploads.

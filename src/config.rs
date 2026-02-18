@@ -217,7 +217,7 @@ impl CliOptions {
     pub fn from_args() -> Result<Self, AppError> {
         let program = env::args()
             .next()
-            .unwrap_or_else(|| "whisper-openai-rust".to_string());
+            .unwrap_or_else(|| "whisper-openai-server".to_string());
         Self::from_tokens(program, env::args().skip(1))
     }
 
@@ -572,7 +572,7 @@ mod tests {
     #[test]
     fn cli_parsing_supports_help_flag() {
         let options = CliOptions::from_tokens(
-            "whisper-openai-rust".to_string(),
+            "whisper-openai-server".to_string(),
             vec!["--help".to_string()],
         )
         .unwrap();
@@ -582,7 +582,7 @@ mod tests {
     #[test]
     fn cli_parsing_reads_value_from_equals_form() {
         let options = CliOptions::from_tokens(
-            "whisper-openai-rust".to_string(),
+            "whisper-openai-server".to_string(),
             vec!["--port=9001".to_string()],
         )
         .unwrap();
@@ -592,7 +592,7 @@ mod tests {
     #[test]
     fn cli_parsing_rejects_unknown_flags() {
         let err = CliOptions::from_tokens(
-            "whisper-openai-rust".to_string(),
+            "whisper-openai-server".to_string(),
             vec!["--unknown".to_string()],
         )
         .unwrap_err();
@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn cli_parsing_supports_model_size() {
         let options = CliOptions::from_tokens(
-            "whisper-openai-rust".to_string(),
+            "whisper-openai-server".to_string(),
             vec!["--whisper-model-size=medium".to_string()],
         )
         .unwrap();

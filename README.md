@@ -1,6 +1,6 @@
-# whisper-openai-rust
+# whisper-openai-server
 
-[![Crates.io](https://img.shields.io/crates/v/whisper-openai-rust)](https://crates.io/crates/whisper-openai-rust)
+[![Crates.io](https://img.shields.io/crates/v/whisper-openai-server)](https://crates.io/crates/whisper-openai-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 
@@ -42,17 +42,17 @@ A high-performance, OpenAI-compatible Whisper API server written in Rust. This s
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/whisper-openai-rust.git
-cd whisper-openai-rust
+git clone https://github.com/yourusername/whisper-openai-server.git
+cd whisper-openai-server
 cargo build --release
 ```
 
-The compiled binary will be available at `target/release/whisper-openai-rust`.
+The compiled binary will be available at `target/release/whisper-openai-server`.
 
 ### Using Cargo Install
 
 ```bash
-cargo install whisper-openai-rust
+cargo install whisper-openai-server
 ```
 
 ## Quick Start
@@ -300,13 +300,13 @@ Response:
       "id": "whisper-1",
       "object": "model",
       "created": 1234567890,
-      "owned_by": "whisper-openai-rust"
+      "owned_by": "whisper-openai-server"
     },
     {
       "id": "whisper-mlx",
       "object": "model",
       "created": 1234567890,
-      "owned_by": "whisper-openai-rust"
+      "owned_by": "whisper-openai-server"
     }
   ]
 }
@@ -343,7 +343,7 @@ cargo clippy
 ### Project Structure
 
 ```
-whisper-openai-rust/
+whisper-openai-server/
 ├── src/
 │   ├── main.rs           # Server entry point
 │   ├── config.rs         # Configuration management
@@ -484,4 +484,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Support
 
-For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/yourusername/whisper-openai-rust).
+For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/yourusername/whisper-openai-server).

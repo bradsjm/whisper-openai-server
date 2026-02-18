@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for agentic coding assistants working in `whisper-openai-rust`.
+Guidance for agentic coding assistants working in `whisper-openai-server`.
 
 ## Project Overview
 
@@ -12,7 +12,7 @@ Guidance for agentic coding assistants working in `whisper-openai-rust`.
 
 ## Build, Run, Lint, and Test Commands
 
-Run commands from repository root: `/Users/user/whisper-openai-rust`.
+Run commands from repository root: `/Users/user/whisper-openai-server`.
 
 ### Build
 

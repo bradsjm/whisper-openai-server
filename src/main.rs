@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "whisper_openai_rust=info,axum=info".into()),
+                .unwrap_or_else(|_| "whisper_openai_server=info,axum=info".into()),
         )
         .compact()
         .init();
@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli_options.help_requested {
         let program = std::env::args()
             .next()
-            .unwrap_or_else(|| "whisper-openai-rust".to_string());
+            .unwrap_or_else(|| "whisper-openai-server".to_string());
         CliOptions::print_help(&program);
         return Ok(());
     }
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         backend = ?cfg.backend_kind,
         whisper_parallelism = cfg.whisper_parallelism,
         max_whisper_parallelism = MAX_WHISPER_PARALLELISM,
-        "starting whisper-openai-rust"
+        "starting whisper-openai-server"
     );
 
     axum::serve(listener, app)

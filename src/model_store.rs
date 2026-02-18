@@ -55,7 +55,7 @@ pub fn ensure_model_ready(cfg: &mut AppConfig) -> Result<(), AppError> {
     }
 
     info!(
-        target = "whisper_openai_rust::model_store",
+        target = "whisper_openai_server::model_store",
         repo = %cfg.whisper_hf_repo,
         filename = %cfg.whisper_hf_filename,
         size = ?cfg.whisper_model_size,
