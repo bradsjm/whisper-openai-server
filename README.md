@@ -58,12 +58,6 @@ cargo build --release
 
 The compiled binary will be available at `target/release/whisper-openai-server`.
 
-### Using Cargo Install
-
-```bash
-cargo install whisper-openai-server
-```
-
 ## Quick Start
 
 ### 1. Start the Server
