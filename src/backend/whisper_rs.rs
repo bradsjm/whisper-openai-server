@@ -31,11 +31,15 @@ impl WhisperRsBackend {
         let model_path = cfg.whisper_model.clone();
         let (contexts, effective_acceleration) = match cfg.acceleration_kind {
             AccelerationKind::None => (
-                build_contexts(&model_path, cfg.whisper_parallelism, false)?,
+                build_contexts(&model_path, cfg.whisper_parallelism, AccelerationKind::None)?,
                 AccelerationKind::None,
             ),
             AccelerationKind::Metal => {
-                match build_contexts(&model_path, cfg.whisper_parallelism, true) {
+                match build_contexts(
+                    &model_path,
+                    cfg.whisper_parallelism,
+                    AccelerationKind::Metal,
+                ) {
                     Ok(contexts) => (contexts, AccelerationKind::Metal),
                     Err(err) if !cfg.acceleration_explicit => {
                         warn!(
@@ -45,7 +49,7 @@ impl WhisperRsBackend {
                             "metal initialization failed; falling back to cpu"
                         );
                         (
-                            build_contexts(&model_path, cfg.whisper_parallelism, false).map_err(
+                            build_contexts(&model_path, cfg.whisper_parallelism, AccelerationKind::None).map_err(
                                 |cpu_err| {
                                     AppError::backend(format!(
                                         "failed to initialize metal acceleration ({err}); cpu fallback also failed: {cpu_err}"
@@ -58,6 +62,34 @@ impl WhisperRsBackend {
                     Err(err) => {
                         return Err(AppError::backend(format!(
                             "failed to initialize whisper with metal acceleration: {err}"
+                        )));
+                    }
+                }
+            }
+            AccelerationKind::Cuda => {
+                match build_contexts(&model_path, cfg.whisper_parallelism, AccelerationKind::Cuda) {
+                    Ok(contexts) => (contexts, AccelerationKind::Cuda),
+                    Err(err) if !cfg.acceleration_explicit => {
+                        warn!(
+                            error = %err,
+                            requested_acceleration = "cuda",
+                            fallback_acceleration = "none",
+                            "cuda initialization failed; falling back to cpu"
+                        );
+                        (
+                            build_contexts(&model_path, cfg.whisper_parallelism, AccelerationKind::None).map_err(
+                                |cpu_err| {
+                                    AppError::backend(format!(
+                                        "failed to initialize cuda acceleration ({err}); cpu fallback also failed: {cpu_err}"
+                                    ))
+                                },
+                            )?,
+                            AccelerationKind::None,
+                        )
+                    }
+                    Err(err) => {
+                        return Err(AppError::backend(format!(
+                            "failed to initialize whisper with cuda acceleration: {err}"
                         )));
                     }
                 }
@@ -82,10 +114,11 @@ impl WhisperRsBackend {
 fn build_contexts(
     model_path: &str,
     whisper_parallelism: usize,
-    use_gpu: bool,
+    acceleration: AccelerationKind,
 ) -> Result<Vec<Arc<Mutex<WhisperContext>>>, AppError> {
     let mut contexts = Vec::with_capacity(whisper_parallelism);
-    let acceleration = if use_gpu { "metal" } else { "none" };
+    let use_gpu = acceleration != AccelerationKind::None;
+    let acceleration_name = acceleration.as_str();
 
     for worker_idx in 0..whisper_parallelism {
         let mut params = WhisperContextParameters::default();
@@ -93,7 +126,7 @@ fn build_contexts(
 
         let context = WhisperContext::new_with_params(model_path, params).map_err(|err| {
             AppError::backend(format!(
-                "failed to load model at {model_path:?} for worker {} using acceleration={acceleration}: {err}",
+                "failed to load model at {model_path:?} for worker {} using acceleration={acceleration_name}: {err}",
                 worker_idx + 1,
             ))
         })?;

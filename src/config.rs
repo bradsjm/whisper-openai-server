@@ -11,8 +11,10 @@ pub const MAX_WHISPER_PARALLELISM: usize = 8;
 /// Supported acceleration modes for whisper-rs context initialization.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, ValueEnum)]
 pub enum AccelerationKind {
-    /// Prefer Metal/GPU acceleration.
+    /// Prefer Metal/GPU acceleration (macOS).
     Metal,
+    /// Prefer CUDA acceleration (Linux/Windows with NVIDIA GPU).
+    Cuda,
     /// Disable GPU acceleration and run on CPU.
     None,
 }
@@ -21,6 +23,7 @@ impl AccelerationKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Metal => "metal",
+            Self::Cuda => "cuda",
             Self::None => "none",
         }
     }
@@ -275,10 +278,7 @@ fn whisper_model_filename(size: WhisperModelSize) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_parallelism, whisper_model_filename, CliArgs, WhisperModelSize,
-        MAX_WHISPER_PARALLELISM,
-    };
+    use super::{parse_parallelism, whisper_model_filename, CliArgs, WhisperModelSize};
     use clap::Parser;
 
     #[test]

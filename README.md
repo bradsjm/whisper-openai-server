@@ -94,7 +94,7 @@ The server can be configured using environment variables or command-line argumen
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WHISPER_BACKEND` | `whisper-rs` | Inference backend (currently only `whisper-rs` supported) |
-| `WHISPER_ACCELERATION` | `metal` | Acceleration mode: `metal` or `none` |
+| `WHISPER_ACCELERATION` | `metal` | Acceleration mode: `metal` (macOS), `cuda` (Linux/Windows), or `none` (CPU) |
 | `WHISPER_AUTO_DOWNLOAD` | `true` | Automatically download model if not found |
 | `WHISPER_HF_REPO` | `ggerganov/whisper.cpp` | Hugging Face repository for model downloads |
 | `WHISPER_MODEL_SIZE` | `small` | Model preset: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v1`, `large-v2`, `large-v3`, `large-v3-turbo` (`large` -> `large-v3`, `turbo` -> `large-v3-turbo`) |
@@ -118,7 +118,7 @@ cargo run --release -- --help
 | `--host <HOST>` | Server host address |
 | `--port <PORT>` | Server port |
 | `--backend <BACKEND>` | Inference backend |
-| `--acceleration <MODE>` | Acceleration mode: `metal` or `none` |
+| `--acceleration <MODE>` | Acceleration mode: `metal`, `cuda`, or `none` |
 | `--model-size <SIZE>` | Model size |
 | `--model <PATH>` | Path to specific model file |
 | `--parallelism <N>` | Number of workers (1-8) |
@@ -143,8 +143,18 @@ For custom and quantized files (`q5`, `q8`, etc.), use `WHISPER_HF_FILENAME` or 
 
 Acceleration behavior:
 - `WHISPER_ACCELERATION=none` (or `--acceleration=none`) forces CPU mode.
-- `WHISPER_ACCELERATION=metal` (or `--acceleration=metal`) requires Metal and fails startup if unavailable.
+- `WHISPER_ACCELERATION=metal` (or `--acceleration=metal`) requires Metal and fails startup if unavailable (macOS only).
+- `WHISPER_ACCELERATION=cuda` (or `--acceleration=cuda`) requires CUDA and fails startup if unavailable (Linux/Windows with NVIDIA GPU).
 - Default behavior (`metal` not explicitly set) tries Metal first and falls back to CPU if Metal initialization fails.
+
+### Platform-Specific Builds
+
+For CUDA support on Linux/Windows, build with the cuda feature:
+```bash
+cargo build --release --features cuda
+```
+
+Note: CUDA requires NVIDIA drivers and CUDA toolkit installed. Metal is only available on macOS.
 
 Example startup logs:
 
