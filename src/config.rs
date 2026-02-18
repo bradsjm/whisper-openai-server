@@ -1,16 +1,15 @@
-//! Configuration loading from environment variables.
+//! Configuration loading from environment variables and CLI arguments.
 //!
 //! Values are intentionally validated early so startup fails fast with
 //! actionable errors.
 
 use crate::error::AppError;
-use std::env;
+use clap::{Parser, ValueEnum};
 
-pub const DEFAULT_WHISPER_PARALLELISM: usize = 1;
 pub const MAX_WHISPER_PARALLELISM: usize = 8;
 
 /// Supported acceleration modes for whisper-rs context initialization.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, ValueEnum)]
 pub enum AccelerationKind {
     /// Prefer Metal/GPU acceleration.
     Metal,
@@ -28,27 +27,135 @@ impl AccelerationKind {
 }
 
 /// Supported whisper.cpp model sizes.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, ValueEnum)]
 pub enum WhisperModelSize {
     Tiny,
+    #[value(name = "tiny.en")]
     TinyEn,
     Base,
+    #[value(name = "base.en")]
     BaseEn,
     Small,
+    #[value(name = "small.en")]
     SmallEn,
     Medium,
+    #[value(name = "medium.en")]
     MediumEn,
+    #[value(name = "large-v1")]
     LargeV1,
+    #[value(name = "large-v2")]
     LargeV2,
+    #[value(name = "large-v3", alias = "large")]
     LargeV3,
+    #[value(name = "large-v3-turbo", alias = "turbo")]
     Turbo,
 }
 
+impl Default for WhisperModelSize {
+    fn default() -> Self {
+        Self::Small
+    }
+}
+
 /// Supported inference backend implementations.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, ValueEnum)]
 pub enum BackendKind {
     /// Uses `whisper-rs` (`whisper.cpp`) for local inference.
+    #[value(name = "whisper-rs")]
     WhisperRs,
+}
+
+impl Default for BackendKind {
+    fn default() -> Self {
+        Self::WhisperRs
+    }
+}
+
+/// Command-line arguments for whisper-openai-server.
+#[derive(Parser, Debug, Clone)]
+#[command(
+    name = "whisper-openai-server",
+    about = "OpenAI-compatible Whisper transcription/translation API server",
+    version
+)]
+pub struct CliArgs {
+    /// Host address to bind to
+    #[arg(long, env = "HOST", default_value = "0.0.0.0")]
+    pub host: String,
+
+    /// Port to listen on
+    #[arg(long, env = "PORT", default_value = "8000")]
+    pub port: u16,
+
+    /// API key for authentication (optional)
+    #[arg(long, env = "API_KEY")]
+    pub api_key: Option<String>,
+
+    /// Local model path
+    #[arg(long, env = "WHISPER_MODEL")]
+    pub model: Option<String>,
+
+    /// Model size
+    #[arg(long, env = "WHISPER_MODEL_SIZE", value_enum, default_value = "small")]
+    pub model_size: WhisperModelSize,
+
+    /// Download missing model
+    #[arg(long, env = "WHISPER_AUTO_DOWNLOAD", default_value = "true")]
+    pub auto_download: bool,
+
+    /// Hugging Face repository for model download
+    #[arg(long, env = "WHISPER_HF_REPO", default_value = "ggerganov/whisper.cpp")]
+    pub hf_repo: String,
+
+    /// Hugging Face model filename
+    #[arg(long, env = "WHISPER_HF_FILENAME")]
+    pub hf_filename: Option<String>,
+
+    /// Local cache directory for downloaded models
+    #[arg(long, env = "WHISPER_CACHE_DIR")]
+    pub cache_dir: Option<String>,
+
+    /// Hugging Face auth token
+    #[arg(long, env = "HF_TOKEN")]
+    pub hf_token: Option<String>,
+
+    /// Extra accepted model id for API requests
+    #[arg(long, env = "WHISPER_MODEL_ALIAS", default_value = "whisper-1")]
+    pub model_alias: String,
+
+    /// Inference backend
+    #[arg(
+        long,
+        env = "WHISPER_BACKEND",
+        value_enum,
+        default_value = "whisper-rs"
+    )]
+    pub backend: BackendKind,
+
+    /// Acceleration mode (metal or none)
+    #[arg(
+        long,
+        env = "WHISPER_ACCELERATION",
+        value_enum,
+        default_value = "metal"
+    )]
+    pub acceleration: AccelerationKind,
+
+    /// Number of inference workers (1-8)
+    #[arg(long, env = "WHISPER_PARALLELISM", default_value = "1", value_parser = parse_parallelism)]
+    pub parallelism: usize,
+}
+
+fn parse_parallelism(s: &str) -> Result<usize, String> {
+    let value: usize = s
+        .parse()
+        .map_err(|_| format!("expected integer in range [1, {MAX_WHISPER_PARALLELISM}]"))?;
+    if value < 1 || value > MAX_WHISPER_PARALLELISM {
+        return Err(format!(
+            "expected integer in range [1, {MAX_WHISPER_PARALLELISM}]"
+        ));
+    }
+    Ok(value)
 }
 
 /// Runtime configuration for the HTTP server and inference backend.
@@ -88,98 +195,44 @@ pub struct AppConfig {
     pub whisper_model_size: WhisperModelSize,
 }
 
-/// Command-line overrides for runtime configuration.
-#[derive(Debug, Clone, Default)]
-pub struct CliOptions {
-    pub help_requested: bool,
-    pub host: Option<String>,
-    pub port: Option<u16>,
-    pub api_key: Option<String>,
-    pub whisper_model: Option<String>,
-    pub whisper_model_size: Option<WhisperModelSize>,
-    pub whisper_auto_download: Option<bool>,
-    pub whisper_hf_repo: Option<String>,
-    pub whisper_hf_filename: Option<String>,
-    pub whisper_cache_dir: Option<String>,
-    pub hf_token: Option<String>,
-    pub api_model_alias: Option<String>,
-    pub backend_kind: Option<BackendKind>,
-    pub acceleration_kind: Option<AccelerationKind>,
-    pub whisper_parallelism: Option<usize>,
-}
-
 impl AppConfig {
-    /// Builds configuration from environment variables.
-    ///
-    /// Variables:
-    /// - `HOST` (default `127.0.0.1`)
-    /// - `PORT` (default `8000`)
-    /// - `WHISPER_MODEL` (optional explicit local model path)
-    /// - `WHISPER_MODEL_SIZE` (default `small`)
-    /// - `WHISPER_AUTO_DOWNLOAD` (default `true`)
-    /// - `WHISPER_HF_REPO` (default `ggerganov/whisper.cpp`)
-    /// - `WHISPER_HF_FILENAME` (default `ggml-small.bin`)
-    /// - `WHISPER_CACHE_DIR` (default `$HOME/.cache/whispercpp/models`)
-    /// - `HF_TOKEN` (optional Hugging Face token)
-    /// - `WHISPER_MODEL_ALIAS` (default `whisper-mlx`)
-    /// - `WHISPER_BACKEND` (only `whisper-rs` is currently supported)
-    /// - `WHISPER_ACCELERATION` (`metal` or `none`, default `metal`)
-    /// - `WHISPER_PARALLELISM` (default `1`, min `1`, max `8`)
-    /// - `API_KEY` (optional)
-    pub fn from_env() -> Result<Self, AppError> {
-        let host = env_str("HOST", "127.0.0.1");
-        let port = env_u16("PORT", 8000)?;
-        let whisper_model_size = env_model_size("WHISPER_MODEL_SIZE", WhisperModelSize::Small)?;
-        let whisper_auto_download = env_bool("WHISPER_AUTO_DOWNLOAD", true)?;
-        let whisper_hf_repo = env_str("WHISPER_HF_REPO", "ggerganov/whisper.cpp");
-        let whisper_hf_filename = env_str(
-            "WHISPER_HF_FILENAME",
-            whisper_model_filename(whisper_model_size),
-        );
-        let whisper_cache_dir = env_str("WHISPER_CACHE_DIR", &default_whisper_cache_dir());
-        let whisper_model_explicit = env_opt("WHISPER_MODEL").is_some();
-        let whisper_model = env_opt("WHISPER_MODEL")
-            .unwrap_or_else(|| format!("{}/{}", whisper_cache_dir, whisper_hf_filename));
-        let api_model_alias = env_str("WHISPER_MODEL_ALIAS", "whisper-mlx");
-        let acceleration_raw = env_opt("WHISPER_ACCELERATION");
-        let acceleration_explicit = acceleration_raw.is_some();
-        let acceleration_kind = match acceleration_raw {
-            Some(raw) => parse_acceleration_kind("WHISPER_ACCELERATION", &raw)?,
-            None => AccelerationKind::Metal,
-        };
+    /// Builds configuration from CLI arguments (which also read environment variables).
+    pub fn from_args() -> Result<Self, AppError> {
+        let args = CliArgs::parse();
+        Self::from_cli_args(args)
+    }
 
-        let backend_kind = match env_str("WHISPER_BACKEND", "whisper-rs").as_str() {
-            "whisper-rs" => BackendKind::WhisperRs,
-            other => {
-                return Err(AppError::internal(format!(
-                    "invalid WHISPER_BACKEND={other:?}; expected whisper-rs"
-                )));
-            }
-        };
-        let whisper_parallelism = env_usize_bounded(
-            "WHISPER_PARALLELISM",
-            DEFAULT_WHISPER_PARALLELISM,
-            1,
-            MAX_WHISPER_PARALLELISM,
-        )?;
+    /// Builds configuration from parsed CLI arguments.
+    pub fn from_cli_args(args: CliArgs) -> Result<Self, AppError> {
+        let cache_dir = args
+            .cache_dir
+            .unwrap_or_else(|| default_whisper_cache_dir());
+        let model_explicit = args.model.is_some();
+        let model_size = args.model_size;
+        let hf_filename = args
+            .hf_filename
+            .unwrap_or_else(|| whisper_model_filename(model_size).to_string());
+        let model = args
+            .model
+            .unwrap_or_else(|| format!("{}/ {}", cache_dir, hf_filename));
 
         Ok(Self {
-            host,
-            port,
-            api_key: env_opt("API_KEY"),
-            whisper_model,
-            whisper_model_explicit,
-            whisper_auto_download,
-            whisper_hf_repo,
-            whisper_hf_filename,
-            whisper_cache_dir,
-            hf_token: env_opt("HF_TOKEN"),
-            api_model_alias,
-            backend_kind,
-            acceleration_kind,
-            acceleration_explicit,
-            whisper_parallelism,
-            whisper_model_size,
+            host: args.host,
+            port: args.port,
+            api_key: args.api_key,
+            whisper_model: model,
+            whisper_model_explicit: model_explicit,
+            whisper_auto_download: args.auto_download,
+            whisper_hf_repo: args.hf_repo,
+            whisper_hf_filename: hf_filename,
+            whisper_cache_dir: cache_dir,
+            hf_token: args.hf_token,
+            api_model_alias: args.model_alias,
+            backend_kind: args.backend,
+            acceleration_kind: args.acceleration,
+            acceleration_explicit: true,
+            whisper_parallelism: args.parallelism,
+            whisper_model_size: model_size,
         })
     }
 
@@ -194,189 +247,6 @@ impl AppConfig {
         }
         ids
     }
-
-    /// Applies command-line overrides on top of environment-derived values.
-    pub fn apply_cli_overrides(&mut self, options: CliOptions) {
-        if let Some(host) = options.host {
-            self.host = host;
-        }
-        if let Some(port) = options.port {
-            self.port = port;
-        }
-        if let Some(api_key) = options.api_key {
-            self.api_key = Some(api_key);
-        }
-        if let Some(whisper_model) = options.whisper_model {
-            self.whisper_model = whisper_model;
-            self.whisper_model_explicit = true;
-        }
-        if let Some(whisper_model_size) = options.whisper_model_size {
-            self.whisper_model_size = whisper_model_size;
-            self.whisper_hf_filename = whisper_model_filename(whisper_model_size).to_string();
-        }
-        if let Some(whisper_auto_download) = options.whisper_auto_download {
-            self.whisper_auto_download = whisper_auto_download;
-        }
-        if let Some(whisper_hf_repo) = options.whisper_hf_repo {
-            self.whisper_hf_repo = whisper_hf_repo;
-        }
-        if let Some(whisper_hf_filename) = options.whisper_hf_filename {
-            self.whisper_hf_filename = whisper_hf_filename;
-        }
-        if let Some(whisper_cache_dir) = options.whisper_cache_dir {
-            self.whisper_cache_dir = whisper_cache_dir;
-        }
-        if let Some(hf_token) = options.hf_token {
-            self.hf_token = Some(hf_token);
-        }
-        if let Some(api_model_alias) = options.api_model_alias {
-            self.api_model_alias = api_model_alias;
-        }
-        if let Some(backend_kind) = options.backend_kind {
-            self.backend_kind = backend_kind;
-        }
-        if let Some(acceleration_kind) = options.acceleration_kind {
-            self.acceleration_kind = acceleration_kind;
-            self.acceleration_explicit = true;
-        }
-        if let Some(whisper_parallelism) = options.whisper_parallelism {
-            self.whisper_parallelism = whisper_parallelism;
-        }
-
-        if !self.whisper_model_explicit {
-            self.whisper_model = format!("{}/{}", self.whisper_cache_dir, self.whisper_hf_filename);
-        }
-    }
-}
-
-impl CliOptions {
-    pub fn from_args() -> Result<Self, AppError> {
-        let program = env::args()
-            .next()
-            .unwrap_or_else(|| "whisper-openai-server".to_string());
-        Self::from_tokens(program, env::args().skip(1))
-    }
-
-    pub fn print_help(program: &str) {
-        println!(
-            "Usage: {program} [OPTIONS]\n\n\
-Options:\n\
-  -h, --help                          Show this help and exit\n\
-      --host <HOST>                       Bind host (env: HOST)\n\
-      --port <PORT>                       Bind port (env: PORT)\n\
-      --api-key <API_KEY>                 Require bearer token (env: API_KEY)\n\
-      --whisper-model <PATH>              Local model path (env: WHISPER_MODEL)\n\
-      --whisper-model-size <SIZE>         Model size tiny|tiny.en|base|base.en|small|small.en|medium|medium.en|large-v1|large-v2|large-v3|large-v3-turbo|turbo (env: WHISPER_MODEL_SIZE)\n\
-      --whisper-auto-download <BOOL>      Download missing model (env: WHISPER_AUTO_DOWNLOAD)\n\
-      --whisper-hf-repo <REPO>            HF repo for model download (env: WHISPER_HF_REPO)\n\
-      --whisper-hf-filename <FILE>        HF model filename (env: WHISPER_HF_FILENAME)\n\
-      --whisper-cache-dir <DIR>           Local model cache dir (env: WHISPER_CACHE_DIR)\n\
-      --hf-token <TOKEN>                  HF auth token (env: HF_TOKEN)\n\
-      --whisper-model-alias <ALIAS>       Extra accepted model id (env: WHISPER_MODEL_ALIAS)\n\
-      --whisper-backend <BACKEND>         Inference backend (env: WHISPER_BACKEND)\n\
-      --acceleration <MODE>               Acceleration mode metal|none (env: WHISPER_ACCELERATION)\n\
-      --whisper-parallelism <N>           Inference workers in range [1, 8] (env: WHISPER_PARALLELISM)\n\n\
-Notes:\n\
-  - Command-line options override environment variable values.\n\
-  - Option values accept both --option value and --option=value forms."
-        );
-    }
-
-    fn from_tokens<I>(program: String, tokens: I) -> Result<Self, AppError>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let mut options = Self::default();
-        let mut iter = tokens.into_iter().peekable();
-
-        while let Some(token) = iter.next() {
-            if token == "-h" || token == "--help" {
-                options.help_requested = true;
-                continue;
-            }
-
-            if !token.starts_with('-') {
-                return Err(AppError::internal(format!(
-                    "unexpected positional argument {token:?}; run {program} --help"
-                )));
-            }
-
-            let (name, inline_value) = split_long_option(&token).ok_or_else(|| {
-                AppError::internal(format!("unknown argument {token:?}; run {program} --help"))
-            })?;
-
-            match name {
-                "--host" => {
-                    options.host = Some(required_option_value(name, inline_value, &mut iter)?);
-                }
-                "--port" => {
-                    let raw = required_option_value(name, inline_value, &mut iter)?;
-                    options.port = Some(parse_u16_option("PORT", &raw)?);
-                }
-                "--api-key" => {
-                    options.api_key = Some(required_option_value(name, inline_value, &mut iter)?);
-                }
-                "--whisper-model" => {
-                    options.whisper_model =
-                        Some(required_option_value(name, inline_value, &mut iter)?);
-                }
-                "--whisper-model-size" => {
-                    let raw = required_option_value(name, inline_value, &mut iter)?;
-                    options.whisper_model_size =
-                        Some(parse_model_size("WHISPER_MODEL_SIZE", &raw)?);
-                }
-                "--whisper-auto-download" => {
-                    let raw = required_option_value(name, inline_value, &mut iter)?;
-                    options.whisper_auto_download =
-                        Some(parse_bool_option("WHISPER_AUTO_DOWNLOAD", &raw)?);
-                }
-                "--whisper-hf-repo" => {
-                    options.whisper_hf_repo =
-                        Some(required_option_value(name, inline_value, &mut iter)?);
-                }
-                "--whisper-hf-filename" => {
-                    options.whisper_hf_filename =
-                        Some(required_option_value(name, inline_value, &mut iter)?);
-                }
-                "--whisper-cache-dir" => {
-                    options.whisper_cache_dir =
-                        Some(required_option_value(name, inline_value, &mut iter)?);
-                }
-                "--hf-token" => {
-                    options.hf_token = Some(required_option_value(name, inline_value, &mut iter)?);
-                }
-                "--whisper-model-alias" => {
-                    options.api_model_alias =
-                        Some(required_option_value(name, inline_value, &mut iter)?);
-                }
-                "--whisper-backend" => {
-                    let raw = required_option_value(name, inline_value, &mut iter)?;
-                    options.backend_kind = Some(parse_backend_kind(&raw)?);
-                }
-                "--acceleration" => {
-                    let raw = required_option_value(name, inline_value, &mut iter)?;
-                    options.acceleration_kind =
-                        Some(parse_acceleration_kind("WHISPER_ACCELERATION", &raw)?);
-                }
-                "--whisper-parallelism" => {
-                    let raw = required_option_value(name, inline_value, &mut iter)?;
-                    options.whisper_parallelism = Some(parse_usize_bounded(
-                        "WHISPER_PARALLELISM",
-                        &raw,
-                        1,
-                        MAX_WHISPER_PARALLELISM,
-                    )?);
-                }
-                _ => {
-                    return Err(AppError::internal(format!(
-                        "unknown argument {token:?}; run {program} --help"
-                    )));
-                }
-            }
-        }
-
-        Ok(options)
-    }
 }
 
 fn default_whisper_cache_dir() -> String {
@@ -384,174 +254,6 @@ fn default_whisper_cache_dir() -> String {
         "{}/.cache/whispercpp/models",
         std::env::var("HOME").unwrap_or_else(|_| "/Users/user".to_string())
     )
-}
-
-fn env_str(name: &str, default: &str) -> String {
-    match env::var(name) {
-        Ok(value) => {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                default.to_string()
-            } else {
-                trimmed.to_string()
-            }
-        }
-        Err(_) => default.to_string(),
-    }
-}
-
-fn env_opt(name: &str) -> Option<String> {
-    match env::var(name) {
-        Ok(value) => {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        }
-        Err(_) => None,
-    }
-}
-
-fn env_u16(name: &str, default: u16) -> Result<u16, AppError> {
-    let raw = env::var(name).unwrap_or_else(|_| default.to_string());
-    let parsed = raw.trim().parse::<u16>().map_err(|_| {
-        AppError::internal(format!("invalid {name}={raw:?}; expected integer 1-65535"))
-    })?;
-    if parsed == 0 {
-        return Err(AppError::internal(format!(
-            "invalid {name}={raw:?}; expected > 0"
-        )));
-    }
-    Ok(parsed)
-}
-
-fn env_bool(name: &str, default: bool) -> Result<bool, AppError> {
-    let raw = env::var(name).unwrap_or_else(|_| default.to_string());
-    let normalized = raw.trim().to_ascii_lowercase();
-    match normalized.as_str() {
-        "1" | "true" | "yes" | "on" => Ok(true),
-        "0" | "false" | "no" | "off" => Ok(false),
-        _ => Err(AppError::internal(format!(
-            "invalid {name}={raw:?}; expected true/false"
-        ))),
-    }
-}
-
-fn env_model_size(name: &str, default: WhisperModelSize) -> Result<WhisperModelSize, AppError> {
-    match env::var(name) {
-        Ok(raw) => parse_model_size(name, &raw),
-        Err(_) => Ok(default),
-    }
-}
-
-fn env_usize_bounded(
-    name: &str,
-    default: usize,
-    min: usize,
-    max: usize,
-) -> Result<usize, AppError> {
-    let raw = env::var(name).unwrap_or_else(|_| default.to_string());
-    parse_usize_bounded(name, &raw, min, max)
-}
-
-fn parse_usize_bounded(name: &str, raw: &str, min: usize, max: usize) -> Result<usize, AppError> {
-    let trimmed = raw.trim();
-    let parsed = trimmed.parse::<usize>().map_err(|_| {
-        AppError::internal(format!(
-            "invalid {name}={raw:?}; expected integer in range [{min}, {max}]"
-        ))
-    })?;
-    if parsed < min || parsed > max {
-        return Err(AppError::internal(format!(
-            "invalid {name}={raw:?}; expected integer in range [{min}, {max}]"
-        )));
-    }
-    Ok(parsed)
-}
-
-fn split_long_option(token: &str) -> Option<(&str, Option<&str>)> {
-    if !token.starts_with("--") {
-        return None;
-    }
-    if let Some((name, value)) = token.split_once('=') {
-        Some((name, Some(value)))
-    } else {
-        Some((token, None))
-    }
-}
-
-fn required_option_value<I>(
-    option_name: &str,
-    inline_value: Option<&str>,
-    iter: &mut std::iter::Peekable<I>,
-) -> Result<String, AppError>
-where
-    I: Iterator<Item = String>,
-{
-    if let Some(value) = inline_value {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            return Err(AppError::internal(format!(
-                "missing value for {option_name}"
-            )));
-        }
-        return Ok(trimmed.to_string());
-    }
-
-    let value = iter
-        .next()
-        .ok_or_else(|| AppError::internal(format!("missing value for {option_name}")))?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(AppError::internal(format!(
-            "missing value for {option_name}"
-        )));
-    }
-    Ok(trimmed.to_string())
-}
-
-fn parse_bool_option(name: &str, raw: &str) -> Result<bool, AppError> {
-    let normalized = raw.trim().to_ascii_lowercase();
-    match normalized.as_str() {
-        "1" | "true" | "yes" | "on" => Ok(true),
-        "0" | "false" | "no" | "off" => Ok(false),
-        _ => Err(AppError::internal(format!(
-            "invalid {name}={raw:?}; expected true/false"
-        ))),
-    }
-}
-
-fn parse_u16_option(name: &str, raw: &str) -> Result<u16, AppError> {
-    let parsed = raw.trim().parse::<u16>().map_err(|_| {
-        AppError::internal(format!("invalid {name}={raw:?}; expected integer 1-65535"))
-    })?;
-    if parsed == 0 {
-        return Err(AppError::internal(format!(
-            "invalid {name}={raw:?}; expected > 0"
-        )));
-    }
-    Ok(parsed)
-}
-
-fn parse_backend_kind(raw: &str) -> Result<BackendKind, AppError> {
-    match raw.trim() {
-        "whisper-rs" => Ok(BackendKind::WhisperRs),
-        other => Err(AppError::internal(format!(
-            "invalid WHISPER_BACKEND={other:?}; expected whisper-rs"
-        ))),
-    }
-}
-
-fn parse_acceleration_kind(name: &str, raw: &str) -> Result<AccelerationKind, AppError> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "metal" => Ok(AccelerationKind::Metal),
-        "none" => Ok(AccelerationKind::None),
-        _ => Err(AppError::internal(format!(
-            "invalid {name}={raw:?}; expected metal|none"
-        ))),
-    }
 }
 
 fn whisper_model_filename(size: WhisperModelSize) -> &'static str {
@@ -571,158 +273,41 @@ fn whisper_model_filename(size: WhisperModelSize) -> &'static str {
     }
 }
 
-fn parse_model_size(name: &str, raw: &str) -> Result<WhisperModelSize, AppError> {
-    let normalized = raw.trim().to_ascii_lowercase();
-    match normalized.as_str() {
-        "tiny" => Ok(WhisperModelSize::Tiny),
-        "tiny.en" => Ok(WhisperModelSize::TinyEn),
-        "base" => Ok(WhisperModelSize::Base),
-        "base.en" => Ok(WhisperModelSize::BaseEn),
-        "small" => Ok(WhisperModelSize::Small),
-        "small.en" => Ok(WhisperModelSize::SmallEn),
-        "medium" => Ok(WhisperModelSize::Medium),
-        "medium.en" => Ok(WhisperModelSize::MediumEn),
-        "large-v1" => Ok(WhisperModelSize::LargeV1),
-        "large-v2" => Ok(WhisperModelSize::LargeV2),
-        "large" | "large-v3" => Ok(WhisperModelSize::LargeV3),
-        "large-v3-turbo" | "turbo" => Ok(WhisperModelSize::Turbo),
-        _ => Err(AppError::internal(format!(
-            "invalid {name}={raw:?}; expected one of tiny|tiny.en|base|base.en|small|small.en|medium|medium.en|large-v1|large-v2|large-v3|large-v3-turbo|turbo"
-        ))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_acceleration_kind, parse_model_size, parse_usize_bounded, whisper_model_filename,
-        AccelerationKind, CliOptions, WhisperModelSize,
+        parse_parallelism, whisper_model_filename, CliArgs, WhisperModelSize,
+        MAX_WHISPER_PARALLELISM,
     };
+    use clap::Parser;
 
     #[test]
-    fn parse_usize_bounded_accepts_in_range_values() {
-        assert_eq!(
-            parse_usize_bounded("WHISPER_PARALLELISM", "1", 1, 8).unwrap(),
-            1
-        );
-        assert_eq!(
-            parse_usize_bounded("WHISPER_PARALLELISM", "8", 1, 8).unwrap(),
-            8
-        );
+    fn parse_parallelism_accepts_in_range_values() {
+        assert_eq!(parse_parallelism("1").unwrap(), 1);
+        assert_eq!(parse_parallelism("8").unwrap(), 8);
     }
 
     #[test]
-    fn parse_usize_bounded_rejects_non_numeric_value() {
-        assert!(parse_usize_bounded("WHISPER_PARALLELISM", "abc", 1, 8).is_err());
+    fn parse_parallelism_rejects_non_numeric_value() {
+        assert!(parse_parallelism("abc").is_err());
     }
 
     #[test]
-    fn parse_usize_bounded_rejects_out_of_range_values() {
-        assert!(parse_usize_bounded("WHISPER_PARALLELISM", "0", 1, 8).is_err());
-        assert!(parse_usize_bounded("WHISPER_PARALLELISM", "9", 1, 8).is_err());
-    }
-
-    #[test]
-    fn cli_parsing_supports_help_flag() {
-        let options = CliOptions::from_tokens(
-            "whisper-openai-server".to_string(),
-            vec!["--help".to_string()],
-        )
-        .unwrap();
-        assert!(options.help_requested);
-    }
-
-    #[test]
-    fn cli_parsing_reads_value_from_equals_form() {
-        let options = CliOptions::from_tokens(
-            "whisper-openai-server".to_string(),
-            vec!["--port=9001".to_string()],
-        )
-        .unwrap();
-        assert_eq!(options.port, Some(9001));
-    }
-
-    #[test]
-    fn cli_parsing_rejects_unknown_flags() {
-        let err = CliOptions::from_tokens(
-            "whisper-openai-server".to_string(),
-            vec!["--unknown".to_string()],
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("unknown argument"));
+    fn parse_parallelism_rejects_out_of_range_values() {
+        assert!(parse_parallelism("0").is_err());
+        assert!(parse_parallelism("9").is_err());
     }
 
     #[test]
     fn cli_parsing_supports_model_size() {
-        let options = CliOptions::from_tokens(
-            "whisper-openai-server".to_string(),
-            vec!["--whisper-model-size=medium".to_string()],
-        )
-        .unwrap();
-        assert_eq!(options.whisper_model_size, Some(WhisperModelSize::Medium));
+        let args = CliArgs::parse_from(["whisper-openai-server", "--model-size=medium"]);
+        assert_eq!(args.model_size, WhisperModelSize::Medium);
     }
 
     #[test]
     fn cli_parsing_supports_acceleration() {
-        let options = CliOptions::from_tokens(
-            "whisper-openai-server".to_string(),
-            vec!["--acceleration=none".to_string()],
-        )
-        .unwrap();
-        assert_eq!(options.acceleration_kind, Some(AccelerationKind::None));
-    }
-
-    #[test]
-    fn parse_model_size_accepts_large_alias() {
-        assert_eq!(
-            parse_model_size("WHISPER_MODEL_SIZE", "large").unwrap(),
-            WhisperModelSize::LargeV3
-        );
-    }
-
-    #[test]
-    fn parse_acceleration_kind_accepts_supported_values() {
-        assert_eq!(
-            parse_acceleration_kind("WHISPER_ACCELERATION", "metal").unwrap(),
-            AccelerationKind::Metal
-        );
-        assert_eq!(
-            parse_acceleration_kind("WHISPER_ACCELERATION", "none").unwrap(),
-            AccelerationKind::None
-        );
-    }
-
-    #[test]
-    fn parse_acceleration_kind_rejects_unknown_values() {
-        assert!(parse_acceleration_kind("WHISPER_ACCELERATION", "cpu").is_err());
-    }
-
-    #[test]
-    fn parse_model_size_accepts_english_variants() {
-        assert_eq!(
-            parse_model_size("WHISPER_MODEL_SIZE", "tiny.en").unwrap(),
-            WhisperModelSize::TinyEn
-        );
-        assert_eq!(
-            parse_model_size("WHISPER_MODEL_SIZE", "medium.en").unwrap(),
-            WhisperModelSize::MediumEn
-        );
-    }
-
-    #[test]
-    fn parse_model_size_accepts_large_model_versions() {
-        assert_eq!(
-            parse_model_size("WHISPER_MODEL_SIZE", "large-v1").unwrap(),
-            WhisperModelSize::LargeV1
-        );
-        assert_eq!(
-            parse_model_size("WHISPER_MODEL_SIZE", "large-v2").unwrap(),
-            WhisperModelSize::LargeV2
-        );
-        assert_eq!(
-            parse_model_size("WHISPER_MODEL_SIZE", "large-v3-turbo").unwrap(),
-            WhisperModelSize::Turbo
-        );
+        let args = CliArgs::parse_from(["whisper-openai-server", "--acceleration=none"]);
+        assert_eq!(args.acceleration, super::AccelerationKind::None);
     }
 
     #[test]

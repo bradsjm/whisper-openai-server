@@ -25,7 +25,7 @@ A high-performance, OpenAI-compatible Whisper API server written in Rust. This s
 - [Configuration](#configuration)
 - [API Documentation](#api-documentation)
 - [Examples](#examples)
-- [Development](#development)
+- [Building from Source](#building-from-source)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
@@ -103,7 +103,7 @@ The server can be configured using environment variables or command-line argumen
 | `WHISPER_MODEL_ALIAS` | `whisper-mlx` | Alternative model ID accepted by the API |
 | `WHISPER_PARALLELISM` | `1` | Number of concurrent inference workers (1-8) |
 | `HF_TOKEN` | - | Hugging Face authentication token (optional) |
-| `HOST` | `127.0.0.1` | Server host address |
+| `HOST` | `0.0.0.0` | Server host address |
 | `PORT` | `8000` | Server port |
 | `API_KEY` | - | Optional API key for authentication (if unset, no auth required) |
 
@@ -117,12 +117,18 @@ cargo run --release -- --help
 |----------|-------------|
 | `--host <HOST>` | Server host address |
 | `--port <PORT>` | Server port |
-| `--whisper-backend <BACKEND>` | Inference backend |
+| `--backend <BACKEND>` | Inference backend |
 | `--acceleration <MODE>` | Acceleration mode: `metal` or `none` |
-| `--whisper-model-size <SIZE>` | Model size |
-| `--whisper-model <PATH>` | Path to specific model file |
-| `--whisper-parallelism <N>` | Number of workers (1-8) |
+| `--model-size <SIZE>` | Model size |
+| `--model <PATH>` | Path to specific model file |
+| `--parallelism <N>` | Number of workers (1-8) |
 | `--api-key <KEY>` | API key for authentication |
+| `--auto-download <BOOL>` | Automatically download missing models |
+| `--hf-repo <REPO>` | Hugging Face repository for downloads |
+| `--hf-filename <FILE>` | Specific model filename to download |
+| `--cache-dir <DIR>` | Directory for cached model files |
+| `--model-alias <ALIAS>` | Alternative model ID for API requests |
+| `--hf-token <TOKEN>` | Hugging Face authentication token |
 
 ### Model Sizes
 
@@ -144,7 +150,7 @@ Example startup logs:
 
 ```text
 INFO initialized whisper acceleration requested_acceleration=metal effective_acceleration=metal whisper_parallelism=2
-INFO starting whisper-openai-server host=127.0.0.1 port=8000 model=/.../ggml-small.bin backend=WhisperRs acceleration=metal whisper_parallelism=2 max_whisper_parallelism=8
+INFO starting whisper-openai-server host=0.0.0.0 port=8000 model=/.../ggml-small.bin backend=WhisperRs acceleration=metal whisper_parallelism=2 max_whisper_parallelism=8
 ```
 
 If fallback is used (default `metal` not explicitly set), `effective_acceleration=none` is logged.
@@ -331,7 +337,7 @@ Response:
 }
 ```
 
-## Development
+## Building from Source
 
 ### Building
 
@@ -366,10 +372,14 @@ whisper-openai-server/
 ├── src/
 │   ├── main.rs           # Server entry point
 │   ├── config.rs         # Configuration management
+│   ├── api.rs            # OpenAI-compatible API routes
 │   ├── server.rs         # HTTP server setup
-│   ├── handlers.rs       # Request handlers
-│   └── inference.rs      # Whisper inference logic
-├── tests/                # Integration tests
+│   ├── backend/          # Inference backend implementations
+│   ├── model_store.rs    # Model download and caching
+│   ├── audio.rs          # Audio format handling
+│   ├── error.rs          # Error handling
+│   └── formats.rs        # Response formatting
+├── Cargo.toml           # Rust package manifest
 ├── run.sh               # Convenience script
 └── README.md            # This file
 ```
@@ -443,9 +453,9 @@ whisper-openai-server/
   kill -9 <PID>
   ```
 
-## Behavior Notes
+### Behavior Notes
 
-### Model Resolution
+#### Model Resolution
 
 The server resolves models in the following order at startup:
 
@@ -454,28 +464,28 @@ The server resolves models in the following order at startup:
 3. If `WHISPER_AUTO_DOWNLOAD=true`, download from Hugging Face to `WHISPER_CACHE_DIR`
 4. If none of the above succeed, fail startup with an actionable error
 
-### Audio File Validation
+#### Audio File Validation
 
 - **Strict extension allowlist**: Only `.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, `.webm` are accepted
 - **Extension is authoritative**: The file extension determines processing, not the MIME type
 - **MP4 rejection**: `.mp4` files are always rejected by design (use container extraction or conversion)
 - **Validation happens early**: Invalid files are rejected before processing begins
 
-### Request Validation
+#### Request Validation
 
 - **Model ID validation**: Only `whisper-1` and `WHISPER_MODEL_ALIAS` are accepted
 - **Temperature range**: Must be a finite float between 0.0 and 1.0
 - **Required parameters**: Both `file` and `model` parameters are mandatory
 - **Multipart body limit**: Requests over 25 MiB are rejected before parsing
 
-### Concurrency and Memory
+#### Concurrency and Memory
 
 - **Worker isolation**: Each parallelism worker loads its own model context
 - **Memory scaling**: Memory usage scales linearly with `WHISPER_PARALLELISM`
 - **Request queuing**: Requests exceeding parallelism limit are queued until a worker is free
 - **Parallelism limits**: Minimum 1, maximum 8 workers
 
-### Authentication
+#### Authentication
 
 - **Optional auth**: If `API_KEY` is not set, no authentication is required
 - **Bearer token**: When enabled, all endpoints require `Authorization: Bearer <API_KEY>`
