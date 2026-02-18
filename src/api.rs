@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Multipart, State};
+use axum::extract::{DefaultBodyLimit, Multipart, State};
 use axum::http::{header, HeaderMap};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -22,6 +22,8 @@ use crate::formats::{segments_to_srt, segments_to_vtt, ResponseFormat};
 pub const APP_NAME: &str = "whisper-openai-rust";
 /// Service version string returned by health endpoints.
 pub const APP_VERSION: &str = "0.1.0";
+/// Maximum accepted multipart request body size for audio uploads.
+pub const MULTIPART_BODY_LIMIT_BYTES: usize = 25 * 1024 * 1024;
 
 /// Shared state injected into all route handlers.
 pub struct AppState {
@@ -47,6 +49,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/v1/models", get(list_models))
         .route("/v1/audio/transcriptions", post(audio_transcriptions))
         .route("/v1/audio/translations", post(audio_translations))
+        .layer(DefaultBodyLimit::max(MULTIPART_BODY_LIMIT_BYTES))
         .with_state(state)
 }
 

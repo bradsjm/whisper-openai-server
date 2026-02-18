@@ -133,8 +133,12 @@ pub fn decode_to_mono_16khz_f32(bytes: &[u8], extension_hint: &str) -> Result<Ve
         }
 
         for frame in samples.chunks(channels) {
-            let sum: f32 = frame.iter().copied().sum();
-            mono.push(sum / channels as f32);
+            let sample = frame
+                .iter()
+                .copied()
+                .max_by(|a, b| a.abs().total_cmp(&b.abs()))
+                .unwrap_or(0.0);
+            mono.push(sample);
         }
     }
 

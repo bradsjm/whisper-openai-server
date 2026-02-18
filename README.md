@@ -168,6 +168,8 @@ curl http://127.0.0.1:8000/v1/audio/transcriptions \
 | temperature | Float | No | Sampling temperature (0.0-1.0) |
 | timestamp_granularities | Array | No | Granularities: `word` |
 
+Maximum multipart upload size is 25 MiB per request.
+
 **Response (JSON):**
 
 ```json
@@ -445,6 +447,7 @@ The server resolves models in the following order at startup:
 - **Model ID validation**: Only `whisper-1` and `WHISPER_MODEL_ALIAS` are accepted
 - **Temperature range**: Must be a finite float between 0.0 and 1.0
 - **Required parameters**: Both `file` and `model` parameters are mandatory
+- **Multipart body limit**: Requests over 25 MiB are rejected before parsing
 
 ### Concurrency and Memory
 

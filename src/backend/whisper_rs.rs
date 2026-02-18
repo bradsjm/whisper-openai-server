@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use tokio::task;
+use tracing::warn;
 use whisper_rs::{
     get_lang_str, FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters,
 };
@@ -33,11 +34,11 @@ impl WhisperRsBackend {
             let context =
                 WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
                     .map_err(|err| {
-                        AppError::backend(format!(
-                            "failed to load model at {model_path:?} for worker {}: {err}",
-                            worker_idx + 1
-                        ))
-                    })?;
+                    AppError::backend(format!(
+                        "failed to load model at {model_path:?} for worker {}: {err}",
+                        worker_idx + 1
+                    ))
+                })?;
             contexts.push(Arc::new(Mutex::new(context)));
         }
 
@@ -53,7 +54,8 @@ impl WhisperRsBackend {
 impl Transcriber for WhisperRsBackend {
     async fn transcribe(&self, req: TranscribeRequest) -> Result<TranscriptResult, AppError> {
         let model_path = self.model_path.clone();
-        let context_idx = self.next_context_idx.fetch_add(1, Ordering::Relaxed) % self.contexts.len();
+        let context_idx =
+            self.next_context_idx.fetch_add(1, Ordering::Relaxed) % self.contexts.len();
         let context = Arc::clone(&self.contexts[context_idx]);
         task::spawn_blocking(move || run_whisper_rs(req, &model_path, context))
             .await
@@ -75,6 +77,12 @@ fn run_whisper_rs(
         .map_err(|err| AppError::backend(format!("failed to create whisper state: {err}")))?;
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_no_timestamps(false);
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+    params.set_max_initial_ts(5.0);
     if let Some(language) = req.language.as_deref() {
         let trimmed = language.trim();
         if !trimmed.is_empty() {
@@ -102,6 +110,130 @@ fn run_whisper_rs(
             ))
         })?;
 
+    let (mut count, mut segments) = extract_segments(&state)?;
+
+    if count == 0 && req.language.is_none() {
+        let mut fallback = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        fallback.set_no_timestamps(false);
+        fallback.set_print_special(false);
+        fallback.set_print_progress(false);
+        fallback.set_print_realtime(false);
+        fallback.set_print_timestamps(false);
+        fallback.set_max_initial_ts(5.0);
+        fallback.set_language(Some("en"));
+        if let Some(prompt) = req.prompt.as_deref() {
+            let trimmed = prompt.trim();
+            if !trimmed.is_empty() {
+                fallback.set_initial_prompt(trimmed);
+            }
+        }
+        if let Some(temp) = req.temperature {
+            fallback.set_temperature(temp);
+        }
+        fallback.set_translate(matches!(req.task, crate::backend::TaskKind::Translate));
+
+        state
+            .full(fallback, &req.audio_16khz_mono_f32)
+            .map_err(|err| {
+                AppError::backend(format!(
+                    "whisper fallback inference failed using {model_path:?}: {err}"
+                ))
+            })?;
+        let (fallback_count, fallback_segments) = extract_segments(&state)?;
+        if fallback_count > 0 {
+            warn!(
+                audio_samples = req.audio_16khz_mono_f32.len(),
+                segment_count = fallback_count,
+                "whisper fallback used fixed language after empty auto-detect output"
+            );
+            count = fallback_count;
+            segments = fallback_segments;
+        }
+    }
+
+    if looks_like_non_speech_only(&segments) {
+        let mut aggressive = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        aggressive.set_no_timestamps(false);
+        aggressive.set_print_special(false);
+        aggressive.set_print_progress(false);
+        aggressive.set_print_realtime(false);
+        aggressive.set_print_timestamps(false);
+        aggressive.set_max_initial_ts(5.0);
+        aggressive.set_no_speech_thold(1.0);
+        aggressive.set_suppress_blank(false);
+
+        if let Some(language) = req.language.as_deref() {
+            let trimmed = language.trim();
+            if !trimmed.is_empty() {
+                aggressive.set_language(Some(trimmed));
+            }
+        } else {
+            aggressive.set_detect_language(true);
+        }
+        if let Some(prompt) = req.prompt.as_deref() {
+            let trimmed = prompt.trim();
+            if !trimmed.is_empty() {
+                aggressive.set_initial_prompt(trimmed);
+            }
+        }
+        if let Some(temp) = req.temperature {
+            aggressive.set_temperature(temp);
+        }
+        aggressive.set_translate(matches!(req.task, crate::backend::TaskKind::Translate));
+
+        state
+            .full(aggressive, &req.audio_16khz_mono_f32)
+            .map_err(|err| {
+                AppError::backend(format!(
+                    "whisper aggressive fallback failed using {model_path:?}: {err}"
+                ))
+            })?;
+
+        let (aggressive_count, aggressive_segments) = extract_segments(&state)?;
+        if transcript_score(&aggressive_segments) > transcript_score(&segments) {
+            warn!(
+                audio_samples = req.audio_16khz_mono_f32.len(),
+                old_segment_count = count,
+                new_segment_count = aggressive_count,
+                "whisper aggressive fallback replaced non-speech-only transcript"
+            );
+            count = aggressive_count;
+            segments = aggressive_segments;
+        }
+    }
+
+    let text = normalize_text(
+        &segments
+            .iter()
+            .map(|seg| seg.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+
+    if text.is_empty() {
+        warn!(
+            audio_samples = req.audio_16khz_mono_f32.len(),
+            segment_count = count,
+            "whisper inference completed with empty transcript"
+        );
+    }
+
+    let detected_language = if let Some(lang) = req.language {
+        Some(lang)
+    } else {
+        get_lang_str(state.full_lang_id_from_state()).map(ToOwned::to_owned)
+    };
+
+    Ok(TranscriptResult {
+        text,
+        language: detected_language,
+        segments,
+    })
+}
+
+fn extract_segments(
+    state: &whisper_rs::WhisperState,
+) -> Result<(i32, Vec<TranscriptSegment>), AppError> {
     let count = state.full_n_segments();
     let mut segments = Vec::with_capacity(count as usize);
     for i in 0..count {
@@ -124,23 +256,28 @@ fn run_whisper_rs(
         });
     }
 
-    let text = normalize_text(
+    Ok((count, segments))
+}
+
+fn looks_like_non_speech_only(segments: &[TranscriptSegment]) -> bool {
+    !segments.is_empty()
+        && segments
+            .iter()
+            .all(|seg| is_parenthesized_event(seg.text.as_str()))
+}
+
+fn is_parenthesized_event(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.starts_with('(') && trimmed.ends_with(')') && !trimmed.contains(' ')
+}
+
+fn transcript_score(segments: &[TranscriptSegment]) -> usize {
+    normalize_text(
         &segments
             .iter()
             .map(|seg| seg.text.as_str())
             .collect::<Vec<_>>()
             .join(" "),
-    );
-
-    let detected_language = if let Some(lang) = req.language {
-        Some(lang)
-    } else {
-        get_lang_str(state.full_lang_id_from_state()).map(ToOwned::to_owned)
-    };
-
-    Ok(TranscriptResult {
-        text,
-        language: detected_language,
-        segments,
-    })
+    )
+    .len()
 }
