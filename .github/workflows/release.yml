@@ -112,7 +112,6 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
-      DIST_FEATURE_ARGS: ${{ runner.os == 'Linux' && '--no-default-features --features cuda' || '--no-default-features --features metal' }}
     steps:
       - name: enable windows longpaths
         run: |
@@ -156,7 +155,13 @@ jobs:
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot
-          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} ${{ env.DIST_FEATURE_ARGS }} > dist-manifest.json
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            DIST_FEATURE_ARGS="--no-default-features --features cuda"
+          else
+            DIST_FEATURE_ARGS="--no-default-features --features metal"
+          fi
+
+          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} ${DIST_FEATURE_ARGS} > dist-manifest.json
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
