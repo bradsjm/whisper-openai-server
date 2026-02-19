@@ -76,7 +76,10 @@ Or download the binary directly from the [releases page](https://github.com/brad
 ```bash
 git clone https://github.com/bradsjm/whisper-openai-server.git
 cd whisper-openai-server
-cargo build --release
+# On macOS:
+cargo build --release --features metal
+# On Linux:
+cargo build --release --features cuda
 ```
 
 The compiled binary will be available at `target/release/whisper-openai-server`.
@@ -94,7 +97,10 @@ The easiest way to start the server is using the provided script:
 Or directly with cargo:
 
 ```bash
-cargo run --release
+# On macOS:
+cargo run --release --features metal
+# On Linux:
+cargo run --release --features cuda
 ```
 
 ### 2. Make Your First Request
@@ -172,23 +178,30 @@ Acceleration behavior:
 
 ### Platform-Specific Builds
 
-For CUDA support on Linux x64, build with the cuda feature:
+This project requires explicitly specifying the acceleration backend at build time. The features have no default - you must choose one.
+
+**Linux x64 with CUDA:**
 ```bash
 cargo build --release --features cuda
 ```
 
-Build prerequisites for Linux CUDA builds (Debian/Ubuntu example):
+Prerequisites for Linux CUDA builds (Debian/Ubuntu example):
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential cmake pkg-config nvidia-cuda-toolkit
 ```
 
-For Metal support on macOS, build with the metal feature:
+**macOS with Metal:**
 ```bash
 cargo build --release --features metal
 ```
 
-Note: CUDA requires NVIDIA drivers and CUDA toolkit installed. Metal is only available on macOS.
+**CPU-only build (any platform):**
+```bash
+cargo build --release
+```
+
+Note: CUDA requires NVIDIA drivers and CUDA toolkit installed. Metal is only available on macOS. The `run.sh` script automatically detects your platform and passes the appropriate feature flags.
 
 Example startup logs:
 

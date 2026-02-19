@@ -16,15 +16,22 @@ Run commands from repository root: `/Users/user/whisper-openai-server`.
 
 ### Build
 
-- Debug build: `cargo build`
-- Release build: `cargo build --release`
-- Build without running: `cargo check`
+This project requires explicitly specifying a feature flag at build time (no default features):
+
+- Debug build (macOS): `cargo build --features metal`
+- Debug build (Linux): `cargo build --features cuda`
+- Release build (macOS): `cargo build --release --features metal`
+- Release build (Linux): `cargo build --release --features cuda`
+- Build without running (macOS): `cargo check --features metal`
+- Build without running (Linux): `cargo check --features cuda`
 
 ### Run
 
-- Run release server directly: `cargo run --release`
-- Run with helper script: `./run.sh`
-- Show CLI options: `cargo run --release -- --help`
+- Run release server directly (macOS): `cargo run --release --features metal`
+- Run release server directly (Linux): `cargo run --release --features cuda`
+- Run with helper script (auto-detects platform): `./run.sh`
+- Show CLI options (macOS): `cargo run --release --features metal -- --help`
+- Show CLI options (Linux): `cargo run --release --features cuda -- --help`
 
 ### Format
 
@@ -39,8 +46,10 @@ Run commands from repository root: `/Users/user/whisper-openai-server`.
 
 ### Test
 
-- Run all tests: `cargo test`
-- Run tests in release mode: `cargo test --release`
+- Run all tests (macOS): `cargo test --features metal`
+- Run all tests (Linux): `cargo test --features cuda`
+- Run tests in release mode (macOS): `cargo test --release --features metal`
+- Run tests in release mode (Linux): `cargo test --release --features cuda`
 - Run one test by name substring:
   - `cargo test parse_model_size_accepts_large_alias`
 - Run one exact test name:

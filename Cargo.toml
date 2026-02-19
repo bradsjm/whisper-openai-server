@@ -1,6 +1,6 @@
 [package]
 name = "whisper-openai-server"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "OpenAI-compatible Whisper transcription/translation API server"
 license = "MIT"
@@ -22,10 +22,9 @@ reqwest = { version = "0.12", features = ["blocking"] }
 tokio = { version = "1.43", features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-whisper-rs = { version = "0.15.1", default-features = false, features = ["metal"] }
+whisper-rs = { version = "0.15.1", default-features = false }
 
 [features]
-default = ["metal"]
 metal = ["whisper-rs/metal"]
 cuda = ["whisper-rs/cuda"]
 

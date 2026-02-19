@@ -153,15 +153,10 @@ jobs:
         if: ${{ runner.os == 'macOS' }}
         run: brew install cmake
       - name: Build artifacts
+        env:
+          CARGO_BUILD_FEATURES: ${{ runner.os == 'Linux' && 'cuda' || 'metal' }}
         run: |
-          # Actually do builds and make zips and whatnot
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            DIST_FEATURE_ARGS="--no-default-features --features cuda"
-          else
-            DIST_FEATURE_ARGS="--no-default-features --features metal"
-          fi
-
-          dist build --allow-dirty ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} ${DIST_FEATURE_ARGS} > dist-manifest.json
+          dist build --allow-dirty ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
