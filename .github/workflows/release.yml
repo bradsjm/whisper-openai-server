@@ -112,6 +112,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+      DIST_FEATURE_ARGS: ${{ runner.os == 'Linux' && '--no-default-features --features cuda' || '--no-default-features --features metal' }}
     steps:
       - name: enable windows longpaths
         run: |
@@ -139,13 +140,23 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
+      - name: Install CUDA toolkit (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          if command -v sudo > /dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y nvidia-cuda-toolkit
+          else
+            apt-get update
+            apt-get install -y nvidia-cuda-toolkit
+          fi
       - name: Install CMake (macOS)
         if: ${{ runner.os == 'macOS' }}
         run: brew install cmake
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot
-          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} ${{ env.DIST_FEATURE_ARGS }} > dist-manifest.json
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build

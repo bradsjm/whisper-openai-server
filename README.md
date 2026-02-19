@@ -33,10 +33,33 @@ A high-performance, OpenAI-compatible Whisper API server written in Rust. This s
 
 ### Quick Install (Binary Release)
 
-**macOS (Apple Silicon/arm64)**
+**macOS (Apple Silicon/arm64, Metal build)**
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bradsjm/whisper-openai-server/releases/latest/download/whisper-openai-server-installer.sh | sh
+```
+
+**Linux (x86_64, CUDA-capable build)**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bradsjm/whisper-openai-server/releases/latest/download/whisper-openai-server-installer.sh | sh
+```
+
+Release binaries are published per platform:
+- `whisper-openai-server-aarch64-apple-darwin.tar.gz` (macOS Metal)
+- `whisper-openai-server-x86_64-unknown-linux-gnu.tar.gz` (Linux x64 CUDA-capable)
+
+On Linux, enable CUDA at runtime with `WHISPER_ACCELERATION=cuda` (or `--acceleration=cuda`).
+If CUDA initialization fails and acceleration was not explicitly requested, the server falls back to CPU.
+
+Linux CUDA runtime requirements:
+- NVIDIA GPU with current NVIDIA driver installed
+- CUDA toolkit available on the system (`nvidia-cuda-toolkit` on Debian/Ubuntu)
+
+Example (Debian/Ubuntu):
+```bash
+sudo apt-get update
+sudo apt-get install -y nvidia-cuda-toolkit
 ```
 
 Or download the binary directly from the [releases page](https://github.com/bradsjm/whisper-openai-server/releases).
@@ -149,9 +172,20 @@ Acceleration behavior:
 
 ### Platform-Specific Builds
 
-For CUDA support on Linux/Windows, build with the cuda feature:
+For CUDA support on Linux x64, build with the cuda feature:
 ```bash
 cargo build --release --features cuda
+```
+
+Build prerequisites for Linux CUDA builds (Debian/Ubuntu example):
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake pkg-config nvidia-cuda-toolkit
+```
+
+For Metal support on macOS, build with the metal feature:
+```bash
+cargo build --release --features metal
 ```
 
 Note: CUDA requires NVIDIA drivers and CUDA toolkit installed. Metal is only available on macOS.
